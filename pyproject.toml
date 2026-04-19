@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hiremindset"
+version = "0.1.0"
+description = "Cross-check interview agent (LangGraph) + Streamlit UI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "streamlit>=1.40",
+  "httpx>=0.27",
+  "pydantic>=2.9",
+  "pydantic-settings>=2.6",
+  "langgraph>=0.2",
+  "langchain-core>=0.3",
+  "langchain-openai>=0.2",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.8", "pytest>=8.0"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hiremindset*"]
