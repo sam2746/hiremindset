@@ -1,0 +1,7 @@
+홍길동
+Backend Engineer, 3 years experience.
+
+- Company A (2022–2024): Python, FastAPI, PostgreSQL. Led API migration cutting latency by 40%.
+- Company B (2021–2022): Intern, Django, Redis.
+
+Education: CS B.S., Example University (2021).

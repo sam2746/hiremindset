@@ -1,0 +1,8 @@
+We are hiring a Backend Engineer.
+
+Requirements:
+- 3+ years Python, REST APIs
+- PostgreSQL, Docker
+- Experience with high-traffic systems
+
+Nice to have: LangChain, observability (OpenTelemetry).
