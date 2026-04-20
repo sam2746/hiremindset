@@ -29,6 +29,7 @@ FlagCategory = Literal[
 ]
 
 ProbeProfile = Literal["numeric", "mechanism", "story", "consistency"] 
+ProbeSource = Literal["plan", "fallback", "hitl"]
 ClaimType = Literal["factual", "achievement", "timeline", "value"]
 TurnRole = Literal["simulator", "human"]
 EvalSuggestion = Literal["mechanism", "drill", "done"]
@@ -98,6 +99,8 @@ class ProbeItem(TypedDict):
     profile: ProbeProfile
     attempts: int
     target_flag_id: NotRequired[str]
+    priority: NotRequired[int]        # 우선순위 큐 정렬 키 (클수록 먼저)
+    source: NotRequired[ProbeSource]  # plan | fallback | hitl
 
 
 class ProbingQuestion(TypedDict):

@@ -21,6 +21,7 @@ from hiremindset.graph.state import (
     CrossVerdict,
     FlagCategory,
     Paragraph,
+    ProbeItem,
     SuspicionFlag,
 )
 
@@ -299,3 +300,93 @@ def default_suspicion_detector(
         return flags
 
     return _detect
+
+
+# ==============================================================
+# Question generation: ProbeItem → 실제 면접 질문 한 문장
+# ==============================================================
+
+
+class _EmittedQuestion(BaseModel):
+    text: str = Field(..., description="후보자에게 던질 한 문장의 면접 질문")
+
+
+_PROFILE_GUIDE = {
+    "numeric": "측정 방법/기준/표본/기간을 정량적으로 요구하세요.",
+    "mechanism": "왜 그 선택이었는지, 대안은 무엇이었고 트레이드오프는 어땠는지 물으세요.",
+    "story": "특정 사건·의사결정·실패 사례를 구체로 끌어내세요.",
+    "consistency": "두 주장 사이의 충돌 지점을 정면으로 짚어 해소를 요구하세요.",
+}
+
+
+_EMIT_SYSTEM = (
+    "당신은 숙련된 면접관입니다. 후보자 주장의 약점을 공격하는 '꼬리 질문' 한 문장을 생성합니다.\n"
+    "- 정중하지만 회피 불가능하도록 구체적이어야 합니다.\n"
+    "- 일반론/모호한 수사 금지. 수치·기간·방법·대안을 요구하세요.\n"
+    "- 반드시 한국어로 한 문장만 작성하세요."
+)
+
+_EMIT_USER = (
+    "# profile: {profile}\n"
+    "# profile 지침: {profile_guide}\n"
+    "# 질문 의도(intent): {intent}\n"
+    "# 기대 신호(expected_signal): {expected_signal}\n\n"
+    "# 대상 claim(s)\n{claims}\n\n"
+    "# 플래그 근거\n{evidence}\n\n"
+    "# 참고 문단\n{paragraphs}\n"
+)
+
+
+def default_question_generator(
+    *,
+    model: str | None = None,
+    temperature: float = 0.2,
+) -> Callable[
+    [ProbeItem, dict[str, Claim], SuspicionFlag | None, list[Paragraph]], str
+]:
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model_name = model or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
+    llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
+    structured = llm.with_structured_output(_EmittedQuestion)
+    prompt = ChatPromptTemplate.from_messages(
+        [("system", _EMIT_SYSTEM), ("human", _EMIT_USER)]
+    )
+    chain = prompt | structured
+
+    def _generate(
+        item: ProbeItem,
+        claims_by_id: dict[str, Claim],
+        flag: SuspicionFlag | None,
+        paragraphs: list[Paragraph],
+    ) -> str:
+        target_claims = [
+            claims_by_id[cid] for cid in item["target_claim_ids"] if cid in claims_by_id
+        ]
+        claims_str = (
+            "\n".join(
+                f"- {c['id']} | {c['type']} | {c['text']}" for c in target_claims
+            )
+            or "(없음)"
+        )
+        paragraph_ids = {c["source_paragraph_id"] for c in target_claims}
+        relevant = [p for p in paragraphs if p["id"] in paragraph_ids]
+        paragraphs_str = (
+            "\n".join(f"{p['id']} | {p['text']}" for p in relevant) or "(없음)"
+        )
+        profile = item["profile"]
+        result = chain.invoke(
+            {
+                "profile": profile,
+                "profile_guide": _PROFILE_GUIDE.get(profile, ""),
+                "intent": item.get("intent", ""),
+                "expected_signal": item.get("expected_signal", ""),
+                "claims": claims_str,
+                "evidence": flag.get("evidence") if flag else "(없음)",
+                "paragraphs": paragraphs_str,
+            }
+        )
+        return result.text.strip()
+
+    return _generate
