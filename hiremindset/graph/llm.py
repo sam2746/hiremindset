@@ -549,6 +549,76 @@ _SEED_USER = (
 )
 
 
+# ---------- drill seeder ----------
+
+
+class _DrillSeedOut(BaseModel):
+    text: str = Field(..., description="답변을 기반으로 파고드는 심층 기술 질문 한 문장")
+
+
+_DRILL_SYSTEM = (
+    "당신은 숙련된 기술 면접관입니다. 후보자의 직전 답변이 '의심스럽지는 않지만'\n"
+    "신입/주니어에게 확인할 만한 기술적 깊이가 더 있다고 판단되어 파고들어야 합니다.\n"
+    "\n"
+    "생성 원칙:\n"
+    "- 후보자가 답변에서 언급한 구체 개념·스택·패턴·용어 중 하나를 콕 짚어서 질문.\n"
+    "- 신입/주니어에게 흔히 요구되는 수준의 질문: 원리, 대안과 트레이드오프,\n"
+    "  실패 케이스·엣지 케이스, 언제 쓰면 안 되는지, 내부 구현/자료구조, 복잡도.\n"
+    "- 답변에 단서가 거의 없으면, 이 claim 주제에서 신입이 알아야 할 핵심 개념 하나를\n"
+    "  직접 끌어와 질문해도 됩니다 (예: JWT라면 서명 검증/만료·리프레시 전략,\n"
+    "  Redis라면 TTL/evict 정책, React라면 key prop·리렌더 등).\n"
+    "- '구체적으로 말씀해 주세요'로 시작하지 말 것. 자연스러운 면접관 어조.\n"
+    "- 후보자 답변을 그대로 반복 인용하지 말 것.\n"
+    "- 반드시 한국어 한 문장만 작성."
+)
+
+_DRILL_USER = (
+    "# 원 질문 (profile={profile})\n{question}\n\n"
+    "# 후보자 답변\n{answer}\n\n"
+    "# 대상 claims\n{claims}\n"
+)
+
+
+def default_drill_seeder(
+    *,
+    model: str | None = None,
+    temperature: float = 0.2,
+) -> Callable[[ProbingQuestion, str, list[Claim]], str]:
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model_name = model or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
+    llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
+    structured = llm.with_structured_output(_DrillSeedOut)
+    prompt = ChatPromptTemplate.from_messages(
+        [("system", _DRILL_SYSTEM), ("human", _DRILL_USER)]
+    )
+    chain = prompt | structured
+
+    def _seed(
+        last_q: ProbingQuestion,
+        answer_text: str,
+        target_claims: list[Claim],
+    ) -> str:
+        claims_str = (
+            "\n".join(
+                f"- {c['id']} | {c['type']} | {c['text']}" for c in target_claims
+            )
+            or "(없음)"
+        )
+        result = chain.invoke(
+            {
+                "profile": last_q.get("profile", "story"),
+                "question": last_q.get("text", ""),
+                "answer": answer_text,
+                "claims": claims_str,
+            }
+        )
+        return result.text.strip()
+
+    return _seed
+
+
 def default_fallback_seeder(
     *,
     model: str | None = None,

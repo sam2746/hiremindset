@@ -66,6 +66,10 @@ def _fake_seeder(last_q, answer_text, target_claims, flag):
     return "그 프로젝트의 .gitignore에는 뭐가 들어있었나요?"
 
 
+def _fake_drill_seeder(last_q, answer_text, target_claims):
+    return "JWT의 서명 검증은 구체적으로 어떤 단계로 이뤄지나요?"
+
+
 def _build():
     return build_graph(
         resume_extractor=_fake_resume_extractor,
@@ -75,6 +79,7 @@ def _build():
         question_generator=_fake_generator,
         answer_evaluator=_fake_evaluator,
         fallback_seeder=_fake_seeder,
+        drill_seeder=_fake_drill_seeder,
     )
 
 
@@ -218,6 +223,50 @@ def test_inject_puts_human_question_on_top():
 
     values = g.get_state(_cfg("t-inj")).values
     assert values["probing_questions"][-1]["text"] == "정말 혼자 하셨어요?"
+
+
+def test_pass_on_flag_probe_does_not_resolve_or_bump():
+    """pass는 flag를 건드리지 않고 다음 큐로 넘어간다."""
+    g = _build()
+    _start_resume(g, "t-pass")
+    _pass_context_probe(g, "t-pass")
+
+    _submit_answer(g, "t-pass", "…")
+    final = _submit_decision(g, "t-pass", "pass")
+
+    # flag가 하나 뿐이라 큐가 비어 세션은 종료
+    assert "__interrupt__" not in final
+    values = g.get_state(_cfg("t-pass")).values
+    flag = values["suspicion_flags"][0]
+    assert flag["resolved"] is False
+    assert flag["fallback_attempts"] == 0
+
+
+def test_drill_on_flag_probe_seeds_drill_question():
+    """drill은 drill_seeder로 새 질문을 큐에 투입하고 flag는 건드리지 않는다."""
+    g = _build()
+    _start_resume(g, "t-drill")
+    _pass_context_probe(g, "t-drill")
+
+    _submit_answer(g, "t-drill", "JWT로 인증했어요")
+    out = _submit_decision(g, "t-drill", "drill")
+
+    assert "__interrupt__" in out
+    payload = _first_interrupt_payload(out)
+    assert payload["type"] == "collect_answer"
+
+    values = g.get_state(_cfg("t-drill")).values
+    # context + flag + drill = 3
+    assert len(values["probing_questions"]) == 3
+    last = values["probing_questions"][-1]
+    assert last["text"] == "JWT의 서명 검증은 구체적으로 어떤 단계로 이뤄지나요?"
+    assert last["profile"] == "mechanism"
+    # drill은 flag 해소 목적이 아니므로 flag는 그대로
+    flag = values["suspicion_flags"][0]
+    assert flag["resolved"] is False
+    assert flag["fallback_attempts"] == 0
+    # 이 drill 질문 자체는 특정 flag에 연결되지 않는다
+    assert last.get("target_flag_id") is None
 
 
 def test_essay_route_uses_essay_extractor():

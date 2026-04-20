@@ -1,4 +1,4 @@
-"""decide_action 순수 로직 (accept/fallback/inject 분기)."""
+"""decide_action 순수 로직 (accept/fallback/drill/pass/inject 분기)."""
 
 import pytest
 
@@ -89,6 +89,20 @@ def test_inject_pushes_new_item_with_highest_priority():
     assert injected["target_flag_id"] == "f0"
     assert injected["id"] != "q9"
     assert out["control"] == "continue"
+
+
+def test_drill_sets_control_without_touching_flag_or_queue():
+    out = apply_decision_response(_base_state(), {"action": "drill"})
+    assert out["control"] == "drill"
+    assert "suspicion_flags" not in out
+    assert "probe_queue" not in out
+
+
+def test_pass_sets_continue_without_touching_flag_or_queue():
+    out = apply_decision_response(_base_state(), {"action": "pass"})
+    assert out["control"] == "continue"
+    assert "suspicion_flags" not in out
+    assert "probe_queue" not in out
 
 
 def test_inject_requires_injected_question():

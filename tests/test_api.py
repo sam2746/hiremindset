@@ -14,6 +14,7 @@ from hiremindset.api.main import app, get_graph
 from hiremindset.graph.builder import build_graph
 from tests.test_graph import (
     _fake_detector,
+    _fake_drill_seeder,
     _fake_essay_extractor,
     _fake_evaluator,
     _fake_generator,
@@ -30,6 +31,7 @@ _FAKE_GRAPH = build_graph(
     question_generator=_fake_generator,
     answer_evaluator=_fake_evaluator,
     fallback_seeder=_fake_seeder,
+    drill_seeder=_fake_drill_seeder,
 )
 
 
@@ -144,6 +146,33 @@ def test_fallback_on_flag_probe_produces_next_collect_answer_question():
     assert data["done"] is False
     assert data["pending_question"]["phase"] == "collect_answer"
     assert data["pending_question"]["text"].startswith("그 프로젝트")
+
+
+def test_pass_on_flag_probe_ends_session_without_resolving():
+    start = _start()
+    _pass_context(start["thread_id"])
+    _answer(start["thread_id"], "…")
+    r = _decide(start["thread_id"], "pass")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["done"] is True
+    flag = data["summary"]["suspicion_flags"][0]
+    assert flag["resolved"] is False
+    assert flag["fallback_attempts"] == 0
+
+
+def test_drill_on_flag_probe_seeds_drill_question():
+    start = _start()
+    _pass_context(start["thread_id"])
+    _answer(start["thread_id"], "JWT로 했어요")
+    r = _decide(start["thread_id"], "drill")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["done"] is False
+    pq = data["pending_question"]
+    assert pq["phase"] == "collect_answer"
+    assert pq["text"].startswith("JWT의 서명 검증")
+    assert pq["profile"] == "mechanism"
 
 
 def test_inject_requires_injected_question():

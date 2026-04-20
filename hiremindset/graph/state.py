@@ -29,12 +29,12 @@ FlagCategory = Literal[
 ]
 
 ProbeProfile = Literal["numeric", "mechanism", "story", "consistency", "context"]
-ProbeSource = Literal["plan", "fallback", "hitl"]
+ProbeSource = Literal["plan", "fallback", "hitl", "drill"]
 ClaimType = Literal["factual", "achievement", "timeline", "value"]
 TurnRole = Literal["simulator", "human"]
 EvalSuggestion = Literal["mechanism", "drill", "done"]
 CrossVerdict = Literal["contradict", "weak", "ok"]
-ControlSignal = Literal["continue", "fallback", "hitl", "done"]
+ControlSignal = Literal["continue", "fallback", "drill", "hitl", "done"]
 
 
 # ---------- inputs / documents ----------

@@ -19,11 +19,12 @@ LangGraph 그래프 조립.
                                       evaluate_answer (AI 채점만)            │
                                                 ▼                            │
                                       decide_action    ◀── HITL #2 (action)  │
-                                   ┌────────────┼────────────┐               │
-                                   ▼            ▼            ▼               │
-                              seed_fallback  (accept/inject) (queue empty)   │
-                                   │            │             ▼              │
-                                   └────► emit_question       END ◀──────────┘
+                        ┌──────────┬──────┴──────┬──────────┐                │
+                        ▼          ▼             ▼          ▼                │
+                 seed_fallback seed_drill (accept/pass/     (queue empty)    │
+                                                 inject)         ▼           │
+                        │          │             │               END ◀───────┘
+                        └──────────┴──────► emit_question
 
 LLM 호출 노드는 builder 인자로 fake를 주입할 수 있게 partial로 래핑한다.
 기본값 None이면 노드 내부에서 Gemini 체인을 만들어 사용한다.
@@ -51,6 +52,7 @@ from hiremindset.graph.nodes.extract import (
 from hiremindset.graph.nodes.flag import flag_suspicion
 from hiremindset.graph.nodes.ingest import ingest_normalize
 from hiremindset.graph.nodes.plan_probe import plan_probe
+from hiremindset.graph.nodes.seed_drill import seed_drill_probe
 from hiremindset.graph.nodes.seed_fallback import seed_fallback_probe
 from hiremindset.graph.routers import route_doc_profile
 from hiremindset.graph.state import GraphState
@@ -68,14 +70,22 @@ def _has_next_round(state: GraphState) -> bool:
 
 
 def _route_after_decide(state: GraphState) -> str:
-    """decide_action 직후 분기: fallback → seed, 아니면 큐 확인 후 loop/done."""
-    if state.get("control") == "fallback":
-        return "seed"
+    """decide_action 직후 분기.
+
+    - control='fallback' → seed_fallback
+    - control='drill'    → seed_drill
+    - 그 외 (accept/pass/inject 후 continue) → 큐 확인 후 loop/done
+    """
+    control = state.get("control")
+    if control == "fallback":
+        return "seed_fallback"
+    if control == "drill":
+        return "seed_drill"
     return "loop" if _has_next_round(state) else "done"
 
 
 def _route_after_seed(state: GraphState) -> str:
-    """seed_fallback_probe 직후: 큐에 추가됐을 테니 보통 loop."""
+    """seed 후: 큐에 추가됐을 테니 보통 loop."""
     return "loop" if _has_next_round(state) else "done"
 
 
@@ -89,6 +99,7 @@ def build_graph(
     question_generator: Callable[..., Any] | None = None,
     answer_evaluator: Callable[..., Any] | None = None,
     fallback_seeder: Callable[..., Any] | None = None,
+    drill_seeder: Callable[..., Any] | None = None,
 ):
     """그래프를 조립하고 compile된 앱을 반환.
 
@@ -127,6 +138,10 @@ def build_graph(
         "seed_fallback_probe",
         partial(seed_fallback_probe, seeder=fallback_seeder),
     )
+    g.add_node(
+        "seed_drill_probe",
+        partial(seed_drill_probe, seeder=drill_seeder),
+    )
 
     g.add_edge(START, "ingest")
     g.add_conditional_edges(
@@ -146,13 +161,19 @@ def build_graph(
         "decide_action",
         _route_after_decide,
         {
-            "seed": "seed_fallback_probe",
+            "seed_fallback": "seed_fallback_probe",
+            "seed_drill": "seed_drill_probe",
             "loop": "emit_question",
             "done": END,
         },
     )
     g.add_conditional_edges(
         "seed_fallback_probe",
+        _route_after_seed,
+        {"loop": "emit_question", "done": END},
+    )
+    g.add_conditional_edges(
+        "seed_drill_probe",
         _route_after_seed,
         {"loop": "emit_question", "done": END},
     )
