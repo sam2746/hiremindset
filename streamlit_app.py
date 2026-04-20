@@ -5,7 +5,12 @@ Streamlit UI.
 
 Phase 1 이후 한 라운드는 두 개의 HITL 단계로 나뉜다.
   1) phase="collect_answer" : 후보자 답변 텍스트만 제출
-  2) phase="decide_action"  : AI 평가 카드를 본 뒤 accept/fallback/inject 결정
+  2) phase="decide_action"  : AI 평가 카드를 본 뒤 면접관이 결정
+     - accept   : 통과 (해당 flag resolved)
+     - drill    : AI가 심층 기술 질문을 생성해 큐에 투입
+     - fallback : AI가 주변 디테일 폴백 질문을 생성
+     - pass     : 추궁 가치 없음, 그냥 넘김
+     - inject   : 면접관이 직접 다음 질문 주입
 """
 
 from __future__ import annotations
@@ -19,7 +24,30 @@ import streamlit as st
 DEFAULT_API = os.environ.get("API_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
 GA_ID = os.environ.get("GA_MEASUREMENT_ID", "").strip()
 
-ACTIONS = ("accept", "fallback", "inject")
+ACTIONS = ("accept", "drill", "fallback", "pass", "inject")
+ACTION_LABELS: dict[str, str] = {
+    "accept": "✅ 통과",
+    "drill": "🔬 심층 질문 생성하기",
+    "fallback": "🩹 폴백 (주변 디테일)",
+    "pass": "⏭️ 그냥 넘기기",
+    "inject": "✍️ 직접 질문 주입",
+}
+ACTION_HELP = (
+    "통과 — 답변이 충분, 다음 질문으로 (해당 flag resolved)\n"
+    "심층 질문 생성하기 — 답변을 기반으로 신입에게 요구될 만한 기술적 심층 질문을 AI가 생성해 큐에 투입\n"
+    "폴백 — 답이 부족해 보일 때 AI가 주변 디테일을 캐묻는 질문을 생성\n"
+    "그냥 넘기기 — 추궁할 가치조차 없는 답변. flag는 그대로 두고 다음 질문으로\n"
+    "직접 질문 주입 — 면접관이 직접 이어갈 질문을 써서 큐 최상단에 투입"
+)
+
+# AI 평가 지표 라벨 한글화 (내부 필드명은 그대로 유지하고 표시만 바꿈).
+METRIC_LABELS: dict[str, str] = {
+    "specificity": "구체성",
+    "consistency": "정합성",
+    "epistemic": "정직성",
+    "hedge": "회피",
+}
+
 PROFILE_BADGE = {
     "context": "🧭",
     "numeric": "🔢",
@@ -43,6 +71,7 @@ def _init_state() -> None:
     ss.setdefault("resume_text", "")
     ss.setdefault("jd_text", "")
     ss.setdefault("action", "accept")
+    ss.setdefault("_decide_for_qid", None)
 
 
 def _reset_session() -> None:
@@ -216,7 +245,8 @@ def _render_history() -> None:
             with st.chat_message("user"):
                 action = (meta or {}).get("action")
                 if action:
-                    st.markdown(_chip(f"action: {action}"), unsafe_allow_html=True)
+                    label = ACTION_LABELS.get(action, action)
+                    st.markdown(_chip(label), unsafe_allow_html=True)
                 st.write(turn["text"] or "_(빈 답변)_")
 
 
@@ -287,42 +317,58 @@ def _render_decide_action(api_base: str) -> None:
     st.success(pq.get("answer_text") or "_(빈 답변)_")
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("specificity", _fmt_score(ai.get("specificity")))
-    c2.metric("consistency", _fmt_score(ai.get("consistency")))
-    c3.metric("epistemic", _fmt_score(ai.get("epistemic")))
-    c4.metric("hedge", "Yes" if ai.get("refusal_or_hedge") else "No")
+    c1.metric(METRIC_LABELS["specificity"], _fmt_score(ai.get("specificity")))
+    c2.metric(METRIC_LABELS["consistency"], _fmt_score(ai.get("consistency")))
+    c3.metric(METRIC_LABELS["epistemic"], _fmt_score(ai.get("epistemic")))
+    c4.metric(
+        METRIC_LABELS["hedge"],
+        "있음" if ai.get("refusal_or_hedge") else "없음",
+    )
     suggest = ai.get("suggest") or []
     if suggest:
         st.markdown(
-            "**AI suggest**: "
-            + " ".join(_chip(s) for s in suggest),
+            "**AI 제안**: " + " ".join(_chip(s) for s in suggest),
             unsafe_allow_html=True,
         )
+
+    # AI가 drill을 제안하면 기본 선택을 drill로 유도한다 (질문이 바뀔 때만).
+    qid = pq.get("question_id") or ""
+    last_qid = ss.get("_decide_for_qid")
+    if last_qid != qid:
+        ss.action = "drill" if "drill" in suggest else "accept"
+        ss._decide_for_qid = qid
+
+    recommended = "drill" if "drill" in suggest else None
+    if recommended:
+        st.info(f"AI 추천: **{ACTION_LABELS[recommended]}**")
+
+    def _fmt_action(a: str) -> str:
+        label = ACTION_LABELS.get(a, a)
+        if recommended and a == recommended:
+            return f"{label}  ⭐"
+        return label
 
     ss.action = st.radio(
         "면접관 결정",
         options=ACTIONS,
+        format_func=_fmt_action,
         horizontal=True,
         index=ACTIONS.index(ss.action if ss.action in ACTIONS else "accept"),
-        help=(
-            "accept — 답변이 충분, 다음 질문으로 (해당 flag resolved) / "
-            "fallback — 답이 부족, AI가 폴백 질문을 생성해 큐 최상단에 투입 / "
-            "inject — 면접관이 직접 다음 질문을 지정"
-        ),
-        key=f"decide_action_{pq.get('question_id')}",
+        help=ACTION_HELP,
+        key=f"decide_action_{qid}",
     )
     injected = ""
     if ss.action == "inject":
         injected = st.text_area(
-            "inject할 다음 질문",
-            key=f"inject_{pq.get('question_id')}",
+            "주입할 다음 질문",
+            key=f"inject_{qid}",
             height=80,
             placeholder="면접관이 직접 이어갈 질문을 입력하세요. 이 질문이 큐 최상단에 들어갑니다.",
         )
 
     if st.button("결정 제출", type="primary"):
         if ss.action == "inject" and not injected.strip():
-            st.warning("inject 액션에는 다음 질문이 필요합니다.")
+            st.warning("직접 질문 주입에는 다음 질문 내용이 필요합니다.")
         else:
             with st.spinner("그래프 재개 중…"):
                 _submit_decision(api_base, ss.action, injected)
