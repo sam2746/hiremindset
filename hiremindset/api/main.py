@@ -75,6 +75,7 @@ def _to_step(thread_id: str, result: dict[str, Any], graph: Any) -> SessionStepR
     interrupts = result.get("__interrupt__") or []
     config = {"configurable": {"thread_id": thread_id}}
     state_values = graph.get_state(config).values or {}
+    summary = _summarize(state_values)
 
     if interrupts:
         payload = _extract_interrupt_payload(interrupts[0])
@@ -88,12 +89,13 @@ def _to_step(thread_id: str, result: dict[str, Any], graph: Any) -> SessionStepR
             asked_round=int(strategy.get("round", 0)),
         )
         return SessionStepResponse(
-            thread_id=thread_id, done=False, pending_question=pending
+            thread_id=thread_id,
+            done=False,
+            pending_question=pending,
+            summary=summary,
         )
 
-    return SessionStepResponse(
-        thread_id=thread_id, done=True, summary=_summarize(state_values)
-    )
+    return SessionStepResponse(thread_id=thread_id, done=True, summary=summary)
 
 
 @app.post("/session/start", response_model=SessionStepResponse)
