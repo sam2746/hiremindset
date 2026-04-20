@@ -1,28 +1,20 @@
 """
-evaluate_answer: 직전 턴의 답변을 AI로 평가하고, fallback이면 꼬리질문 시드를 큐에 push.
+evaluate_answer: 직전 턴의 답변을 AI로 채점만 한다.
 
-- 항상 실행: answer_eval에 AnswerEval을 누적 (accept 경로도 리포트용 기록).
-- control == "fallback" 일 때만:
-    seeder가 다음 꼬리질문 문장을 생성 → 기존 ProbeItem의 profile을 그대로 승계한
-    새 ProbeItem을 큐 최상위(priority = max+10)에 push. pre_generated_text를 채워
-    다음 emit_question이 LLM을 다시 돌리지 않는다.
-- 평가 verdict 자체는 AI가 '제안'만 하고 실제 판정은 collect_answer에서 면접관이 이미 내렸다
-  (사용자 설계 결정 #3).
-
-evaluator / seeder는 주입 가능. 기본은 Gemini 체인.
+Phase 1에서 fallback 시드 생성 로직은 ``seed_fallback_probe`` 노드로 분리했다.
+이 노드는 이제 **면접관 결정(decide_action) 이전에** 실행되어 AI 평가를
+``answer_eval``에 누적하기만 한다. control 플래그는 건드리지 않는다.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
-from hiremindset.graph.queue_ops import max_priority, next_queue_suffix
 from hiremindset.graph.state import (
     AnswerEval,
     Claim,
     GraphState,
     Paragraph,
-    ProbeItem,
     ProbingQuestion,
     SuspicionFlag,
 )
@@ -31,17 +23,12 @@ EvaluatorFn = Callable[
     [ProbingQuestion, str, list[Claim], SuspicionFlag | None, list[Paragraph]],
     AnswerEval,
 ]
-SeederFn = Callable[
-    [ProbingQuestion, str, list[Claim], SuspicionFlag | None],
-    str,
-]
 
 
 def evaluate_answer(
     state: GraphState,
     *,
     evaluator: EvaluatorFn | None = None,
-    seeder: SeederFn | None = None,
 ) -> GraphState:
     pqs = list(state.get("probing_questions") or [])
     turns = list(state.get("turns") or [])
@@ -75,35 +62,4 @@ def evaluate_answer(
     eval_result["q_id"] = last_q["id"]
 
     existing_evals = list(state.get("answer_eval") or [])
-    patch: GraphState = {"answer_eval": existing_evals + [eval_result]}
-
-    if state.get("control") != "fallback":
-        return patch
-
-    # --- fallback 경로: 꼬리질문 시드 생성 ---
-    if seeder is None:
-        from hiremindset.graph.llm import default_fallback_seeder
-
-        seeder = default_fallback_seeder()
-    seed_text = seeder(last_q, answer_text, target_claims, flag)
-
-    queue = list(state.get("probe_queue") or [])
-    new_priority = max_priority(queue) + 10
-    new_idx = next_queue_suffix(state)
-    new_item: ProbeItem = {
-        "id": f"q{new_idx}",
-        "target_claim_ids": list(target_ids),
-        "intent": "이전 답변의 공백을 파고드는 꼬리질문",
-        "expected_signal": "부족했던 구체 디테일 확보",
-        "profile": last_q.get("profile") or "story",  # type: ignore[typeddict-item]
-        "attempts": 0,
-        "priority": new_priority,
-        "source": "fallback",
-        "pre_generated_text": seed_text,
-    }
-    if flag_id:
-        new_item["target_flag_id"] = flag_id
-
-    patch["probe_queue"] = queue + [new_item]
-    patch["control"] = "continue"
-    return patch
+    return {"answer_eval": existing_evals + [eval_result]}

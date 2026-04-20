@@ -236,13 +236,18 @@ class _LLMFlagList(BaseModel):
 
 
 _FLAG_SYSTEM = (
-    "당신은 면접관 관점에서 후보자 주장의 약점을 탐지합니다.\n"
+    "당신은 면접관 관점에서 후보자 주장의 '명백한' 약점만 탐지합니다.\n"
     "다음 카테고리 중 해당되는 것만 flag로 생성하세요.\n"
     "- cliche_template: 자소서 템플릿/상투어, 구체 디테일 없이 가치 수사만 있는 주장\n"
     "- metric_unsupported: 수치 성과 주장에 측정 방법·기준·단위가 부재\n"
     "- suspected_exaggeration: 스코프·역할이 과장된 정황\n"
     "- inauthentic_company_ref: 회사 언급이 껍데기만, 직무·제품 맥락 부재\n"
-    "severity는 1/3/5만 사용. 애매하면 플래그를 만들지 마세요."
+    "\n"
+    "중요 규칙 (질문 밀도 방어):\n"
+    "1) 한 claim당 최대 1개의 flag만 생성합니다. 가장 결정적인 하나만 고르세요.\n"
+    "2) severity는 3 또는 5만 사용합니다. 1(경미)은 사용하지 마세요.\n"
+    "3) 조금이라도 애매하면 flag를 만들지 마세요. '혹시 그럴 수도'는 제외.\n"
+    "4) 같은 category를 문서 전체에서 과다 생성하지 말고, 가장 대표적인 case 중심으로."
 )
 
 _FLAG_USER = (
@@ -315,17 +320,27 @@ class _EmittedQuestion(BaseModel):
 
 
 _PROFILE_GUIDE = {
-    "numeric": "측정 방법/기준/표본/기간을 정량적으로 요구하세요.",
+    "context": (
+        "아직 이 경험의 배경이 충분히 공유되지 않았습니다. "
+        "어느 수업/팀/프로젝트였는지, 왜 하게 되었는지, 본인이 어떤 역할을 맡았는지처럼 "
+        "개방형 맥락 질문을 한 문장으로 던지세요. 수치·디테일을 몰아세우지 마세요."
+    ),
+    "numeric": (
+        "측정 방법/기준/표본/기간 중 하나를 자연스럽게 묻되, "
+        "바로 '구체적으로 말씀해 주세요' 같은 상투 표현은 피하세요."
+    ),
     "mechanism": "왜 그 선택이었는지, 대안은 무엇이었고 트레이드오프는 어땠는지 물으세요.",
-    "story": "특정 사건·의사결정·실패 사례를 구체로 끌어내세요.",
+    "story": "특정 사건·의사결정·실패 사례를 자연스럽게 끌어내세요.",
     "consistency": "두 주장 사이의 충돌 지점을 정면으로 짚어 해소를 요구하세요.",
 }
 
 
 _EMIT_SYSTEM = (
-    "당신은 숙련된 면접관입니다. 후보자 주장의 약점을 공격하는 '꼬리 질문' 한 문장을 생성합니다.\n"
-    "- 정중하지만 회피 불가능하도록 구체적이어야 합니다.\n"
-    "- 일반론/모호한 수사 금지. 수치·기간·방법·대안을 요구하세요.\n"
+    "당신은 숙련된 면접관입니다. 후보자의 주장에 대해 상황에 맞는 한 문장 질문을 생성합니다.\n"
+    "- 정중한 면접관 어조. 회피 불가능하되 억지스럽지 않게.\n"
+    "- 꼭 '구체적으로 말씀해 주세요'로 시작하지 말고 자연스러운 어투로 물으세요.\n"
+    "- profile=context면 배경·동기·역할 같은 맥락을 여는 개방형 질문을,\n"
+    "  그 외 profile은 해당 지침에 맞춰 날카롭게 파고드세요.\n"
     "- 반드시 한국어로 한 문장만 작성하세요."
 )
 
@@ -495,19 +510,113 @@ class _FallbackSeedOut(BaseModel):
 
 
 _SEED_SYSTEM = (
-    "당신은 숙련된 면접관입니다. 직전 답변에서 부족했던 지점을 더 좁혀 물어보는\n"
-    "다음 꼬리 질문 한 문장을 생성하세요.\n"
-    "- 직전 답변을 그대로 인용하지 말고, 그 답변이 회피한 지점을 찍어 질문하세요.\n"
-    "- profile을 유지한 채 한 단계 더 구체 수준을 높이세요.\n"
-    "- 반드시 한국어로 한 문장만."
+    "당신은 숙련된 면접관입니다. 후보자가 직전 질문에 '모르겠다/기억 안 난다/모호함'으로 답했습니다.\n"
+    "핵심 원칙: **같은 수치·지표를 다시 캐묻지 말 것**. 대신, 그 경험이 실제였다면\n"
+    "자연스럽게 알 수밖에 없는 '주변 디테일'을 물어 진위를 간접 확인하세요.\n"
+    "\n"
+    "카테고리를 충분히 로테이션해서, 매 fallback마다 서로 다른 각도를 택하세요:\n"
+    "(A) 배경/맥락 — 어느 수업·동아리·인턴이었는지, 왜 시작했는지, 기간, 팀 인원·역할 분담\n"
+    "(B) 팀·의사결정 — 리뷰어/멘토가 누구였는지, 반대 의견이나 코드리뷰에서 지적받은 부분,\n"
+    "    회의 주기, 결정이 기록된 문서(PR/Notion/Slack) 위치\n"
+    "(C) 실무 디테일 — .gitignore·.env·Dockerfile 구성, CI 파일명·단계, 배포 주기,\n"
+    "    장애 대응 채널, 실제 엔드포인트/DB 테이블 이름 1~2개\n"
+    "(D) 측정·관측 — 어떤 도구/스크립트로 쟀는지, 평소 보던 대시보드, 비교군, 서버 스펙\n"
+    "(E) 회고·감정 — 가장 오래 걸렸던 문제, 반복해서 고친 실수, 끝나고 남은 아쉬움,\n"
+    "    다음에 한다면 바꿀 결정\n"
+    "\n"
+    "선택 가이드:\n"
+    "- 직전 질문이 수치/성능이었으면 (A)(B)(E) 같은 비(非)수치 각도를 우선 선택.\n"
+    "- 직전 질문이 맥락/역할이었으면 (C)(D)처럼 실무 흔적을 묻는 각도로 전환.\n"
+    "- 같은 카테고리만 연속 선택하지 말고 이전 라운드와 다른 각도를 우선.\n"
+    "\n"
+    "재시도 강도 조절:\n"
+    "- fallback_attempts=0~1: 해당 각도의 실무적인 디테일 하나를 자연스럽게 묻기.\n"
+    "- fallback_attempts>=2: (E) 회고·감정 쪽으로 전환. 당시 불편했던 점·남은 인상·다음에 바꿀 결정 등.\n"
+    "\n"
+    "출력 규칙:\n"
+    "- 반드시 한국어 한 문장. 공손한 면접관 어투.\n"
+    "- '구체적으로 말씀해 주세요'로 시작하지 말 것.\n"
+    "- 원 질문과 같은 수치를 다시 요구하지 말 것.\n"
+    "- 직전 답변을 그대로 반복 인용하지 말 것."
 )
 
 _SEED_USER = (
     "# 원 질문 (profile={profile})\n{question}\n\n"
     "# 후보자 답변\n{answer}\n\n"
     "# 대상 claims\n{claims}\n\n"
-    "# 플래그 근거\n{evidence}\n"
+    "# 플래그 근거\n{evidence}\n\n"
+    "# fallback_attempts\n{fallback_attempts}\n"
 )
+
+
+# ---------- drill seeder ----------
+
+
+class _DrillSeedOut(BaseModel):
+    text: str = Field(..., description="답변을 기반으로 파고드는 심층 기술 질문 한 문장")
+
+
+_DRILL_SYSTEM = (
+    "당신은 숙련된 기술 면접관입니다. 후보자의 직전 답변이 '의심스럽지는 않지만'\n"
+    "신입/주니어에게 확인할 만한 기술적 깊이가 더 있다고 판단되어 파고들어야 합니다.\n"
+    "\n"
+    "생성 원칙:\n"
+    "- 후보자가 답변에서 언급한 구체 개념·스택·패턴·용어 중 하나를 짚어서 질문.\n"
+    "- 신입/주니어에게 흔히 요구되는 수준의 질문: 원리, 대안과 트레이드오프,\n"
+    "  실패 케이스·엣지 케이스, 언제 쓰면 안 되는지, 내부 구현/자료구조, 복잡도.\n"
+    "- 답변에 단서가 거의 없으면, 이 claim 주제에서 신입이 알아야 할 핵심 개념 하나를\n"
+    "  직접 끌어와 질문해도 됩니다 (예: JWT라면 서명 검증/만료·리프레시 전략,\n"
+    "  Redis라면 TTL/evict 정책, React라면 key prop·리렌더 등).\n"
+    "- '구체적으로 말씀해 주세요'로 시작하지 말 것. 자연스러운 면접관 어조.\n"
+    "- 후보자 답변을 그대로 반복 인용하지 말 것.\n"
+    "- 반드시 한국어 한 문장만 작성."
+)
+
+_DRILL_USER = (
+    "# 원 질문 (profile={profile})\n{question}\n\n"
+    "# 후보자 답변\n{answer}\n\n"
+    "# 대상 claims\n{claims}\n"
+)
+
+
+def default_drill_seeder(
+    *,
+    model: str | None = None,
+    temperature: float = 0.2,
+) -> Callable[[ProbingQuestion, str, list[Claim]], str]:
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model_name = model or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
+    llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
+    structured = llm.with_structured_output(_DrillSeedOut)
+    prompt = ChatPromptTemplate.from_messages(
+        [("system", _DRILL_SYSTEM), ("human", _DRILL_USER)]
+    )
+    chain = prompt | structured
+
+    def _seed(
+        last_q: ProbingQuestion,
+        answer_text: str,
+        target_claims: list[Claim],
+    ) -> str:
+        claims_str = (
+            "\n".join(
+                f"- {c['id']} | {c['type']} | {c['text']}" for c in target_claims
+            )
+            or "(없음)"
+        )
+        result = chain.invoke(
+            {
+                "profile": last_q.get("profile", "story"),
+                "question": last_q.get("text", ""),
+                "answer": answer_text,
+                "claims": claims_str,
+            }
+        )
+        return result.text.strip()
+
+    return _seed
 
 
 def default_fallback_seeder(
@@ -545,6 +654,7 @@ def default_fallback_seeder(
                 "answer": answer_text,
                 "claims": claims_str,
                 "evidence": flag.get("evidence") if flag else "(없음)",
+                "fallback_attempts": int(flag.get("fallback_attempts", 0)) if flag else 0,
             }
         )
         return result.text.strip()

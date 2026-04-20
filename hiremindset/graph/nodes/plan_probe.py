@@ -12,12 +12,15 @@ category_tier가 클수록 면접에서 먼저 터뜨려야 하는 카테고리.
 from __future__ import annotations
 
 from hiremindset.graph.state import (
+    Claim,
     FlagCategory,
     GraphState,
     ProbeItem,
     ProbeProfile,
     SuspicionFlag,
 )
+
+CONTEXT_PROBE_PRIORITY = 999
 
 CATEGORY_TIER: dict[str, int] = {
     "timeline_conflict": 6,
@@ -96,15 +99,62 @@ def _flag_to_item(flag: SuspicionFlag, idx: int) -> ProbeItem:
     }
 
 
+def _has_context_probe(
+    queue: list[ProbeItem], pqs: list[dict] | None
+) -> bool:
+    if any((it.get("profile") == "context") for it in queue):
+        return True
+    for pq in pqs or []:
+        if pq.get("profile") == "context":
+            return True
+    return False
+
+
+def _pick_context_claim(claims: list[Claim]) -> Claim | None:
+    """세션 맥락을 환기시키기에 가장 좋은 claim 하나.
+
+    우선순위: achievement/value > factual > timeline. 같은 type 내에서는 첫 번째.
+    명확한 전공/과목/프로젝트 배경을 끌어낼 수 있는 '이야기성' claim을 선호한다.
+    """
+    if not claims:
+        return None
+    priority = {"achievement": 3, "value": 2, "factual": 1, "timeline": 0}
+    return max(claims, key=lambda c: priority.get(c.get("type", ""), 0))
+
+
+def _build_context_item(claim: Claim, idx: int) -> ProbeItem:
+    return {
+        "id": f"q{idx}",
+        "target_claim_ids": [claim["id"]],
+        "intent": "이 경험의 배경·동기·역할·소속을 환기시킨다",
+        "expected_signal": "어느 수업/팀/프로젝트였고 본인 역할이 무엇이었는지",
+        "profile": "context",
+        "attempts": 0,
+        "priority": CONTEXT_PROBE_PRIORITY,
+        "source": "plan",
+    }
+
+
 def plan_probe(state: GraphState) -> GraphState:
     flags = list(state.get("suspicion_flags") or [])
     existing = list(state.get("probe_queue") or [])
+    pqs = list(state.get("probing_questions") or [])
     taken_flag_ids = {
         it.get("target_flag_id") for it in existing if it.get("target_flag_id")
     }
 
-    start_idx = len(existing)
     new_items: list[ProbeItem] = []
+    start_idx = len(existing)
+
+    # 세션 초반에 context probe 1개를 최상위 priority로 선행 투입.
+    # 이미 context가 있거나 이미 달린 경우엔 다시 추가하지 않는다.
+    if not _has_context_probe(existing, pqs):
+        claim = _pick_context_claim(list(state.get("claims") or []))
+        if claim:
+            new_items.append(
+                _build_context_item(claim, start_idx + len(new_items))
+            )
+
     for flag in flags:
         if flag.get("resolved"):
             continue

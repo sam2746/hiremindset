@@ -28,13 +28,13 @@ FlagCategory = Literal[
     "inauthentic_company_ref",  # 다른 회사명 혼용 등 성의 문제
 ]
 
-ProbeProfile = Literal["numeric", "mechanism", "story", "consistency"] 
-ProbeSource = Literal["plan", "fallback", "hitl"]
+ProbeProfile = Literal["numeric", "mechanism", "story", "consistency", "context"]
+ProbeSource = Literal["plan", "fallback", "hitl", "drill"]
 ClaimType = Literal["factual", "achievement", "timeline", "value"]
 TurnRole = Literal["simulator", "human"]
 EvalSuggestion = Literal["mechanism", "drill", "done"]
 CrossVerdict = Literal["contradict", "weak", "ok"]
-ControlSignal = Literal["continue", "fallback", "hitl", "done"]
+ControlSignal = Literal["continue", "fallback", "drill", "hitl", "done"]
 
 
 # ---------- inputs / documents ----------
@@ -133,11 +133,32 @@ class AnswerEval(TypedDict):
 
 # ---------- control / strategy / scoring ----------
 
-class DecisionLogEntry(TypedDict):
+DecisionAction = Literal["accept", "fallback", "drill", "pass", "skip", "inject"]
+
+
+class DecisionLogEntry(TypedDict, total=False):
+    """라운드별 면접관 결정 + AI 평가 스냅샷을 한 줄로 남긴다.
+
+    assemble_report가 이 로그를 그대로 테이블로 옮기고, 감점 추적의 1차 근거로 쓴다.
+    """
+
     round: int
+    question_id: str
+    question: str
+    answer_text: str
+    action: DecisionAction
+    flag_id: str
+    profile: str
+    ai_suggest: list[str]
+    ai_specificity: float
+    ai_consistency: float
+    ai_epistemic: float
+    ai_hedge: bool
+    immediate: bool  # True면 collect_answer 단계에서 즉시 통과(AI 평가 생략)
+    # 과거 스텁과의 호환 필드 (리포트용)
     why: str
     fallback_used: bool
-    chosen_probe_id: NotRequired[str]
+    chosen_probe_id: str
 
 
 class Strategy(TypedDict, total=False):
@@ -193,6 +214,8 @@ class GraphState(TypedDict, total=False):
     strategy: Strategy
     control: ControlSignal
     decision_log: list[DecisionLogEntry]
+    # collect_answer 직후 evaluate_answer·decide_action 생략 (즉시 통과)
+    skip_evaluate_decide: bool
 
     # Output
     scoring: Scoring

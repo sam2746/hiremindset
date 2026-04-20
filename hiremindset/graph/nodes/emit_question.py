@@ -40,9 +40,13 @@ def _pick_top(queue: list[ProbeItem]) -> tuple[ProbeItem, list[ProbeItem]]:
 def emit_question(
     state: GraphState, *, generator: GeneratorFn | None = None
 ) -> GraphState:
+    clear_skip = {}
+    if state.get("skip_evaluate_decide"):
+        clear_skip["skip_evaluate_decide"] = False
+
     queue = list(state.get("probe_queue") or [])
     if not queue:
-        return {}
+        return clear_skip
 
     top, remaining = _pick_top(queue)
 
@@ -93,6 +97,7 @@ def emit_question(
     strategy["last_profile"] = top["profile"]
 
     return {
+        **clear_skip,
         "probe_queue": remaining,
         "probing_questions": existing_pqs + [pq],
         "turns": existing_turns + [turn],
