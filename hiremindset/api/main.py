@@ -16,6 +16,7 @@ import uuid
 from functools import lru_cache
 from typing import Any
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from langgraph.types import Command
@@ -27,6 +28,8 @@ from hiremindset.api.schemas import (
     SessionStepResponse,
 )
 from hiremindset.graph.builder import build_graph
+
+load_dotenv()
 
 app = FastAPI(title="HireMindset API", version="0.1.0")
 
