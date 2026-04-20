@@ -14,8 +14,8 @@ from hiremindset.graph.state import Documents, GraphState, Meta, Paragraph, Stra
 
 DEFAULT_META: Meta = {
     "interview_mode": "technical",
-    "max_rounds": 4,
-    "max_fallbacks": 2,
+    "max_rounds": 10,
+    "max_fallbacks": 3,
     "allow_hitl": True,
 }
 
