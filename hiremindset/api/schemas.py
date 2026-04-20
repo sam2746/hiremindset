@@ -1,13 +1,17 @@
 """FastAPI <-> Streamlit 간 주고받는 세션 API 스키마.
 
-그래프가 HITL interrupt 기반이라 한 번의 요청으로 끝나지 않는다.
-- /session/start : 문서를 넣고 첫 질문이 나올 때까지 돌린 뒤 interrupt
-- /session/resume: 면접관의 답변/액션으로 그래프 재개 → 다음 질문 또는 종료
+Phase 1부터 한 라운드는 두 번의 interrupt로 나뉜다.
+- phase="collect_answer" : 후보자 답변 텍스트만 수집
+- phase="decide_action"  : AI 평가를 본 뒤 면접관이 accept/fallback/inject 결정
+
+/session/resume 요청에는 클라이언트가 어느 phase로 응답하는지 싣는다.
 """
 
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+Phase = Literal["collect_answer", "decide_action"]
 
 
 class SessionStartRequest(BaseModel):
@@ -18,21 +22,45 @@ class SessionStartRequest(BaseModel):
 
 class SessionResumeRequest(BaseModel):
     thread_id: str = Field(..., min_length=1)
-    action: Literal["accept", "fallback", "inject"]
-    answer_text: str = Field(default="", description="현재 질문에 대한 후보자 답변")
+    phase: Phase = Field(
+        default="collect_answer",
+        description="직전 pending_question의 phase를 그대로 넣는다.",
+    )
+    answer_text: str = Field(
+        default="",
+        description="phase=collect_answer일 때 후보자 답변.",
+    )
+    action: Literal["accept", "fallback", "inject"] | None = Field(
+        default=None,
+        description="phase=decide_action일 때 면접관 결정.",
+    )
     injected_question: str | None = Field(
         default=None,
         description="action='inject'일 때 면접관이 직접 적은 다음 질문",
     )
 
 
+class AnswerEvalSnapshot(BaseModel):
+    specificity: float
+    consistency: float
+    epistemic: float
+    refusal_or_hedge: bool
+    suggest: list[str] = Field(default_factory=list)
+
+
 class PendingQuestion(BaseModel):
+    phase: Phase
     question_id: str
     queue_id: str
     text: str
     profile: str | None = None
     target_flag_id: str | None = None
+    target_claim_ids: list[str] = Field(default_factory=list)
     asked_round: int = 0
+
+    # phase=decide_action일 때만 채워짐: UI가 평가 카드 + 답변 원문을 보여주는 데 사용.
+    answer_text: str | None = None
+    ai_eval: AnswerEvalSnapshot | None = None
 
 
 class SessionStepResponse(BaseModel):

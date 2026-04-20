@@ -2,8 +2,10 @@
 Streamlit UI.
 
 원칙: 그래프를 import하지 않고 FastAPI(/session/start, /session/resume)만 호출한다.
-면접관이 브라우저에서 문서를 넣고, 매 라운드 interrupt로 멈춘 pending_question에
-답변 + 액션(accept / fallback / inject)을 제출해 세션을 진행한다.
+
+Phase 1 이후 한 라운드는 두 개의 HITL 단계로 나뉜다.
+  1) phase="collect_answer" : 후보자 답변 텍스트만 제출
+  2) phase="decide_action"  : AI 평가 카드를 본 뒤 accept/fallback/inject 결정
 """
 
 from __future__ import annotations
@@ -92,31 +94,52 @@ def _start_session(api_base: str) -> None:
     if not data:
         return
     _apply_step(data)
-    if ss.pending:
+    if ss.pending and ss.pending.get("phase") == "collect_answer":
         ss.history.append(
             {"role": "simulator", "text": ss.pending["text"], "meta": ss.pending}
         )
 
 
-def _resume_session(api_base: str, answer: str, injected: str) -> None:
+def _submit_answer(api_base: str, answer: str) -> None:
     ss = st.session_state
     if not ss.thread_id or not ss.pending:
         return
     ss.last_error = None
-    ss.history.append(
-        {"role": "human", "text": answer, "meta": {"action": ss.action}}
+    ss.history.append({"role": "human", "text": answer, "meta": {}})
+    data = _post(
+        api_base,
+        "/session/resume",
+        {
+            "thread_id": ss.thread_id,
+            "phase": "collect_answer",
+            "answer_text": answer,
+        },
     )
+    if not data:
+        return
+    _apply_step(data)
+    # decide_action phase면 채팅 히스토리에는 기록하지 않고 카드로만 보여준다.
+
+
+def _submit_decision(api_base: str, action: str, injected: str) -> None:
+    ss = st.session_state
+    if not ss.thread_id or not ss.pending:
+        return
+    ss.last_error = None
+    # 결정 자체를 히스토리의 직전 human turn 메타에 덧붙여 기록
+    if ss.history and ss.history[-1]["role"] == "human":
+        ss.history[-1]["meta"] = {**(ss.history[-1].get("meta") or {}), "action": action}
     payload = {
         "thread_id": ss.thread_id,
-        "answer_text": answer,
-        "action": ss.action,
-        "injected_question": injected if ss.action == "inject" else None,
+        "phase": "decide_action",
+        "action": action,
+        "injected_question": injected if action == "inject" else None,
     }
     data = _post(api_base, "/session/resume", payload)
     if not data:
         return
     _apply_step(data)
-    if ss.pending:
+    if ss.pending and ss.pending.get("phase") == "collect_answer":
         ss.history.append(
             {"role": "simulator", "text": ss.pending["text"], "meta": ss.pending}
         )
@@ -196,7 +219,7 @@ def _render_history() -> None:
                 st.write(turn["text"] or "_(빈 답변)_")
 
 
-def _render_pending(api_base: str) -> None:
+def _render_collect_answer(api_base: str) -> None:
     ss = st.session_state
     pq = ss.pending or {}
 
@@ -207,7 +230,6 @@ def _render_pending(api_base: str) -> None:
         f"flag `{pq.get('target_flag_id') or '-'}`"
     )
 
-    # 매 라운드 새로운 key로 textarea 초기화
     turn_idx = len(ss.history)
     answer = st.text_area(
         "후보자 답변",
@@ -215,8 +237,48 @@ def _render_pending(api_base: str) -> None:
         height=140,
         placeholder="면접관이 후보자의 답변을 대신 입력/요약해 주세요.",
     )
+    if st.button("답변 제출", type="primary"):
+        with st.spinner("AI 평가 중…"):
+            _submit_answer(api_base, answer)
+        st.rerun()
+
+
+def _fmt_score(v: Any) -> str:
+    try:
+        return f"{float(v):.2f}"
+    except (TypeError, ValueError):
+        return "-"
+
+
+def _render_decide_action(api_base: str) -> None:
+    ss = st.session_state
+    pq = ss.pending or {}
+    ai = pq.get("ai_eval") or {}
+
+    st.divider()
+    st.markdown(
+        f"**AI 평가** · R{pq.get('asked_round')} · profile `{pq.get('profile')}`"
+    )
+    st.caption("질문")
+    st.info(pq.get("text") or "")
+    st.caption("후보자 답변")
+    st.success(pq.get("answer_text") or "_(빈 답변)_")
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("specificity", _fmt_score(ai.get("specificity")))
+    c2.metric("consistency", _fmt_score(ai.get("consistency")))
+    c3.metric("epistemic", _fmt_score(ai.get("epistemic")))
+    c4.metric("hedge", "Yes" if ai.get("refusal_or_hedge") else "No")
+    suggest = ai.get("suggest") or []
+    if suggest:
+        st.markdown(
+            "**AI suggest**: "
+            + " ".join(_chip(s) for s in suggest),
+            unsafe_allow_html=True,
+        )
+
     ss.action = st.radio(
-        "액션",
+        "면접관 결정",
         options=ACTIONS,
         horizontal=True,
         index=ACTIONS.index(ss.action if ss.action in ACTIONS else "accept"),
@@ -225,24 +287,32 @@ def _render_pending(api_base: str) -> None:
             "fallback — 답이 부족, AI가 폴백 질문을 생성해 큐 최상단에 투입 / "
             "inject — 면접관이 직접 다음 질문을 지정"
         ),
-        key=f"action_{turn_idx}",
+        key=f"decide_action_{pq.get('question_id')}",
     )
     injected = ""
     if ss.action == "inject":
         injected = st.text_area(
             "inject할 다음 질문",
-            key=f"inject_{turn_idx}",
+            key=f"inject_{pq.get('question_id')}",
             height=80,
             placeholder="면접관이 직접 이어갈 질문을 입력하세요. 이 질문이 큐 최상단에 들어갑니다.",
         )
 
-    if st.button("제출", type="primary"):
+    if st.button("결정 제출", type="primary"):
         if ss.action == "inject" and not injected.strip():
             st.warning("inject 액션에는 다음 질문이 필요합니다.")
         else:
             with st.spinner("그래프 재개 중…"):
-                _resume_session(api_base, answer, injected)
+                _submit_decision(api_base, ss.action, injected)
             st.rerun()
+
+
+def _render_pending(api_base: str) -> None:
+    phase = (st.session_state.pending or {}).get("phase")
+    if phase == "decide_action":
+        _render_decide_action(api_base)
+    else:
+        _render_collect_answer(api_base)
 
 
 def _render_summary() -> None:

@@ -5,12 +5,9 @@
   python scripts/try_session.py resume samples/resume_example.txt [samples/jd_example.txt]
   python scripts/try_session.py essay  samples/essay_example.txt
 
-흐름:
-  1) build_graph()로 실제 그래프 컴파일 (Gemini 호출 포함)
-  2) /session/start에 해당하는 invoke → 첫 interrupt까지 실행
-  3) 면접관 역할로 답변과 액션(a=accept / f=fallback / i=inject)을 CLI에 입력
-  4) Command(resume=...)로 재개. 큐가 마르거나 max_rounds 도달까지 반복
-  5) 종료 시 요약 출력
+Phase 1 이후 한 라운드는 두 번의 interrupt로 나뉜다:
+  1) collect_answer  : 답변 텍스트만 입력
+  2) decide_action   : AI 평가를 본 뒤 a/f/i 결정
 """
 
 from __future__ import annotations
@@ -35,7 +32,6 @@ def _usage() -> int:
 
 
 def _parse_max_rounds(argv: list[str]) -> tuple[list[str], int | None]:
-    """argv에서 --max-rounds N 플래그만 분리. 양수 아니면 None."""
     pos, i, max_rounds = [], 0, None
     while i < len(argv):
         if argv[i] == "--max-rounds" and i + 1 < len(argv):
@@ -50,12 +46,18 @@ def _parse_max_rounds(argv: list[str]) -> tuple[list[str], int | None]:
     return pos, max_rounds
 
 
-def _print_interrupt(result: dict, state_values: dict) -> dict:
+def _interrupt_payload(result: dict) -> dict:
     interrupts = result.get("__interrupt__") or []
-    payload = {}
-    if interrupts:
-        raw = interrupts[0]
-        payload = getattr(raw, "value", None) or {}
+    if not interrupts:
+        return {}
+    raw = interrupts[0]
+    value = getattr(raw, "value", None) or {}
+    if isinstance(value, tuple):
+        value = value[0] if value else {}
+    return value if isinstance(value, dict) else {}
+
+
+def _print_question(payload: dict, state_values: dict) -> None:
     strategy = state_values.get("strategy") or {}
     print("\n" + "=" * 60)
     print(f"라운드 {strategy.get('round', '?')} | profile={payload.get('profile')}")
@@ -76,24 +78,38 @@ def _print_interrupt(result: dict, state_values: dict) -> dict:
                 f"evidence={flag.get('evidence', '')[:80]}"
             )
     print("=" * 60)
-    return payload
 
 
-def _prompt_action() -> dict:
+def _print_ai_eval(payload: dict) -> None:
+    ev = payload.get("ai_eval") or {}
+    print("\n" + "-" * 60)
+    print("AI 평가")
+    print(f"  answer      : {payload.get('answer_text')}")
+    print(
+        f"  specificity={ev.get('specificity')} consistency={ev.get('consistency')} "
+        f"epistemic={ev.get('epistemic')} hedge={ev.get('refusal_or_hedge')}"
+    )
+    print(f"  suggest     : {ev.get('suggest')}")
+    print("-" * 60)
+
+
+def _prompt_answer() -> dict:
+    answer = input("answer_text > ").strip()
+    return {"answer_text": answer}
+
+
+def _prompt_decision() -> dict:
     action = ""
     while action not in {"a", "f", "i"}:
         action = input("action [a=accept / f=fallback / i=inject] > ").strip().lower()
-    answer = input("answer_text > ").strip()
-    injected = None
-    if action == "i":
-        while not (injected or "").strip():
-            injected = input("injected_question > ").strip()
     mapping = {"a": "accept", "f": "fallback", "i": "inject"}
-    return {
-        "answer_text": answer,
-        "action": mapping[action],
-        "injected_question": injected,
-    }
+    payload: dict = {"action": mapping[action]}
+    if action == "i":
+        injected = ""
+        while not injected.strip():
+            injected = input("injected_question > ").strip()
+        payload["injected_question"] = injected
+    return payload
 
 
 def _print_summary(values: dict) -> None:
@@ -140,8 +156,19 @@ def main(argv: list[str]) -> int:
 
     while "__interrupt__" in result:
         state = graph.get_state(config).values
-        _print_interrupt(result, state)
-        resp = _prompt_action()
+        payload = _interrupt_payload(result)
+        phase = payload.get("type")
+
+        if phase == "collect_answer":
+            _print_question(payload, state)
+            resp = _prompt_answer()
+        elif phase == "decide_action":
+            _print_ai_eval(payload)
+            resp = _prompt_decision()
+        else:
+            print(f"(알 수 없는 phase: {phase}) — 빈 resume으로 진행")
+            resp = {}
+
         result = graph.invoke(Command(resume=resp), config)
 
     _print_summary(graph.get_state(config).values)
