@@ -1,0 +1,44 @@
+---
+config:
+  flowchart:
+    curve: linear
+---
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	ingest(ingest)
+	extract_resume(extract_resume)
+	extract_essay(extract_essay)
+	cross_check(cross_check)
+	flag(flag)
+	plan_probe(plan_probe)
+	emit_question(emit_question)
+	collect_answer(collect_answer)
+	evaluate_answer(evaluate_answer)
+	decide_action(decide_action)
+	seed_fallback_probe(seed_fallback_probe)
+	seed_drill_probe(seed_drill_probe)
+	assemble_report(assemble_report)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> ingest;
+	collect_answer --> evaluate_answer;
+	cross_check --> flag;
+	decide_action -. &nbsp;done&nbsp; .-> assemble_report;
+	decide_action -. &nbsp;loop&nbsp; .-> emit_question;
+	decide_action -. &nbsp;seed_drill&nbsp; .-> seed_drill_probe;
+	decide_action -. &nbsp;seed_fallback&nbsp; .-> seed_fallback_probe;
+	emit_question --> collect_answer;
+	evaluate_answer --> decide_action;
+	extract_essay --> cross_check;
+	extract_resume --> cross_check;
+	flag --> plan_probe;
+	ingest -. &nbsp;essay&nbsp; .-> extract_essay;
+	ingest -. &nbsp;resume&nbsp; .-> extract_resume;
+	plan_probe --> emit_question;
+	seed_drill_probe -. &nbsp;done&nbsp; .-> assemble_report;
+	seed_drill_probe -. &nbsp;loop&nbsp; .-> emit_question;
+	seed_fallback_probe -. &nbsp;done&nbsp; .-> assemble_report;
+	seed_fallback_probe -. &nbsp;loop&nbsp; .-> emit_question;
+	assemble_report --> __end__;
+	classDef default fill:#f2f0ff,line-height:1.2
+	classDef first fill-opacity:0
+	classDef last fill:#bfb6fc
