@@ -115,9 +115,16 @@ def test_answer_transitions_to_decide_action_phase_with_ai_eval():
     assert pq["ai_eval"]["specificity"] == 0.5
 
 
-def test_accept_closes_session_when_queue_empty():
+def _pass_context(thread_id: str) -> None:
+    """세션 최상위 context probe를 accept로 넘기기."""
+    _answer(thread_id, "학부 프로젝트였습니다")
+    _decide(thread_id, "accept")
+
+
+def test_accept_closes_session_after_context_and_flag_probe():
     start = _start()
-    _answer(start["thread_id"], "구체적으로 답변")
+    _pass_context(start["thread_id"])
+    _answer(start["thread_id"], "k6로 측정했습니다")
     r = _decide(start["thread_id"], "accept")
     assert r.status_code == 200, r.text
     data = r.json()
@@ -127,8 +134,9 @@ def test_accept_closes_session_when_queue_empty():
     assert summary["turns"][0]["role"] == "human"
 
 
-def test_fallback_produces_next_collect_answer_question():
+def test_fallback_on_flag_probe_produces_next_collect_answer_question():
     start = _start()
+    _pass_context(start["thread_id"])
     _answer(start["thread_id"], "잘 모르겠습니다")
     r = _decide(start["thread_id"], "fallback")
     assert r.status_code == 200

@@ -28,7 +28,7 @@ FlagCategory = Literal[
     "inauthentic_company_ref",  # 다른 회사명 혼용 등 성의 문제
 ]
 
-ProbeProfile = Literal["numeric", "mechanism", "story", "consistency"] 
+ProbeProfile = Literal["numeric", "mechanism", "story", "consistency", "context"]
 ProbeSource = Literal["plan", "fallback", "hitl"]
 ClaimType = Literal["factual", "achievement", "timeline", "value"]
 TurnRole = Literal["simulator", "human"]

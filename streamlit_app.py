@@ -21,6 +21,7 @@ GA_ID = os.environ.get("GA_MEASUREMENT_ID", "").strip()
 
 ACTIONS = ("accept", "fallback", "inject")
 PROFILE_BADGE = {
+    "context": "🧭",
     "numeric": "🔢",
     "mechanism": "⚙️",
     "story": "📖",

@@ -153,10 +153,29 @@ def test_answer_submission_runs_evaluate_then_decide_interrupt():
     assert values["turns"][-1]["role"] == "human"
 
 
-def test_accept_ends_session_when_queue_empty():
+def _pass_context_probe(g, thread_id: str) -> None:
+    """세션 최상위 context probe를 accept로 바로 통과."""
+    _submit_answer(g, thread_id, "학부 CS 수업 프로젝트였습니다")
+    _submit_decision(g, thread_id, "accept")
+
+
+def test_first_emitted_question_is_context_probe():
+    g = _build()
+    _start_resume(g, "t-ctx")
+    values = g.get_state(_cfg("t-ctx")).values
+    first_pq = values["probing_questions"][0]
+    assert first_pq["profile"] == "context"
+    # context probe는 flag 기반이 아니므로 target_flag_id가 붙지 않는다.
+    assert first_pq.get("target_flag_id") is None
+
+
+def test_accept_through_context_then_flag_probe_ends_session():
     g = _build()
     _start_resume(g, "t-accept")
-    _submit_answer(g, "t-accept", "네, 구체적으로는…")
+    _pass_context_probe(g, "t-accept")
+
+    # 이제 두 번째 질문은 flag 기반
+    _submit_answer(g, "t-accept", "네, 측정은 k6로 했습니다")
     final = _submit_decision(g, "t-accept", "accept")
 
     assert "__interrupt__" not in final
@@ -164,9 +183,11 @@ def test_accept_ends_session_when_queue_empty():
     assert values["suspicion_flags"][0]["resolved"] is True
 
 
-def test_fallback_adds_seeded_probe_and_loops():
+def test_fallback_on_flag_probe_seeds_next_question():
     g = _build()
     _start_resume(g, "t-fb")
+    _pass_context_probe(g, "t-fb")
+
     _submit_answer(g, "t-fb", "잘 기억이 안 나요")
     out = _submit_decision(g, "t-fb", "fallback")
 
@@ -175,8 +196,9 @@ def test_fallback_adds_seeded_probe_and_loops():
     assert payload["type"] == "collect_answer"
 
     values = g.get_state(_cfg("t-fb")).values
-    assert len(values["probing_questions"]) == 2
-    assert values["probing_questions"][1]["text"] == (
+    # context + flag + seeded fallback = 3
+    assert len(values["probing_questions"]) == 3
+    assert values["probing_questions"][-1]["text"] == (
         "그 프로젝트의 .gitignore에는 뭐가 들어있었나요?"
     )
     assert values["suspicion_flags"][0]["fallback_attempts"] == 1
