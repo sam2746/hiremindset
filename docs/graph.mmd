@@ -20,7 +20,11 @@ graph TD;
 	assemble_report(assemble_report)
 	__end__([<p>__end__</p>]):::last
 	__start__ --> ingest;
-	collect_answer --> evaluate_answer;
+	collect_answer -. &nbsp;done&nbsp; .-> assemble_report;
+	collect_answer -. &nbsp;loop&nbsp; .-> emit_question;
+	collect_answer -. &nbsp;evaluate&nbsp; .-> evaluate_answer;
+	collect_answer -. &nbsp;seed_drill&nbsp; .-> seed_drill_probe;
+	collect_answer -. &nbsp;seed_fallback&nbsp; .-> seed_fallback_probe;
 	cross_check --> flag;
 	decide_action -. &nbsp;done&nbsp; .-> assemble_report;
 	decide_action -. &nbsp;loop&nbsp; .-> emit_question;

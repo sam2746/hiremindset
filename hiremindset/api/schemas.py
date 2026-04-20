@@ -36,6 +36,13 @@ class SessionResumeRequest(BaseModel):
         default="",
         description="phase=collect_answer일 때 후보자 답변.",
     )
+    immediate_action: Literal["accept"] | None = Field(
+        default=None,
+        description=(
+            "phase=collect_answer일 때만: 답변과 함께 즉시 통과(accept). "
+            "AI 평가·decide_action 단계를 건너뜀."
+        ),
+    )
     action: (
         Literal["accept", "fallback", "drill", "pass", "skip", "inject"] | None
     ) = Field(

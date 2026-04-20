@@ -127,6 +127,29 @@ def test_session_start_rejects_out_of_range_max_rounds():
     assert r.status_code == 422
 
 
+def test_collect_immediate_accept_skips_decide_action_phase():
+    start = _start()
+    r = client.post(
+        "/session/resume",
+        json={
+            "thread_id": start["thread_id"],
+            "phase": "collect_answer",
+            "answer_text": "학부 프로젝트였습니다",
+            "immediate_action": "accept",
+        },
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data["done"] is False
+    assert data["pending_question"]["phase"] == "collect_answer"
+    summary = data["summary"]
+    assert len(summary.get("answer_eval") or []) == 0
+    assert any(
+        e.get("immediate") and e.get("action") == "accept"
+        for e in summary.get("decision_log") or []
+    )
+
+
 def test_answer_transitions_to_decide_action_phase_with_ai_eval():
     start = _start()
     r = _answer(start["thread_id"], "응답시간을 k6로 1시간 측정했습니다")

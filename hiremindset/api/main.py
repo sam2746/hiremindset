@@ -171,7 +171,10 @@ def session_start(
 
 def _resume_payload(body: SessionResumeRequest) -> dict[str, Any]:
     if body.phase == "collect_answer":
-        return {"answer_text": body.answer_text}
+        payload: dict[str, Any] = {"answer_text": body.answer_text}
+        if body.immediate_action == "accept":
+            payload["immediate_action"] = "accept"
+        return payload
 
     if body.action is None:
         raise HTTPException(

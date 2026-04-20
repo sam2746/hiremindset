@@ -96,7 +96,11 @@ def _print_ai_eval(payload: dict) -> None:
 
 def _prompt_answer() -> dict:
     answer = input("answer_text > ").strip()
-    return {"answer_text": answer}
+    quick = input("즉시 통과(accept, AI 평가 생략)? [y/N] > ").strip().lower()
+    out: dict = {"answer_text": answer}
+    if quick == "y":
+        out["immediate_action"] = "accept"
+    return out
 
 
 def _prompt_decision() -> dict:

@@ -154,6 +154,7 @@ class DecisionLogEntry(TypedDict, total=False):
     ai_consistency: float
     ai_epistemic: float
     ai_hedge: bool
+    immediate: bool  # True면 collect_answer 단계에서 즉시 통과(AI 평가 생략)
     # 과거 스텁과의 호환 필드 (리포트용)
     why: str
     fallback_used: bool
@@ -213,6 +214,8 @@ class GraphState(TypedDict, total=False):
     strategy: Strategy
     control: ControlSignal
     decision_log: list[DecisionLogEntry]
+    # collect_answer 직후 evaluate_answer·decide_action 생략 (즉시 통과)
+    skip_evaluate_decide: bool
 
     # Output
     scoring: Scoring

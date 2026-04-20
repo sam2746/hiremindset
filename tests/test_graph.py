@@ -110,9 +110,14 @@ def _first_interrupt_payload(result: dict) -> dict:
     return value
 
 
-def _submit_answer(g, thread_id: str, answer: str) -> dict:
-    """HITL #1에 답변 제출 → decide_action interrupt까지 진행."""
-    return g.invoke(Command(resume={"answer_text": answer}), _cfg(thread_id))
+def _submit_answer(
+    g, thread_id: str, answer: str, *, immediate_action: str | None = None
+) -> dict:
+    """HITL #1에 답변 제출 → decide_action interrupt까지 진행 (또는 즉시 통과 시 생략)."""
+    payload: dict = {"answer_text": answer}
+    if immediate_action:
+        payload["immediate_action"] = immediate_action
+    return g.invoke(Command(resume=payload), _cfg(thread_id))
 
 
 def _submit_decision(
@@ -162,6 +167,26 @@ def _pass_context_probe(g, thread_id: str) -> None:
     """세션 최상위 context probe를 accept로 바로 통과."""
     _submit_answer(g, thread_id, "학부 CS 수업 프로젝트였습니다")
     _submit_decision(g, thread_id, "accept")
+
+
+def test_immediate_accept_on_collect_skips_ai_eval_and_decide_interrupt():
+    """context 단계에서 답변+즉시 통과면 evaluate/decide 없이 다음 질문으로."""
+    g = _build()
+    _start_resume(g, "t-immediate")
+    out = _submit_answer(
+        g, "t-immediate", "학부 팀 프로젝트였습니다", immediate_action="accept"
+    )
+    assert "__interrupt__" in out
+    payload = _first_interrupt_payload(out)
+    assert payload["type"] == "collect_answer"
+    values = g.get_state(_cfg("t-immediate")).values
+    # AI 평가 없음
+    assert len(values.get("answer_eval") or []) == 0
+    # 즉시 통과 로그
+    assert any(
+        e.get("immediate") and e.get("action") == "accept"
+        for e in values.get("decision_log") or []
+    )
 
 
 def test_first_emitted_question_is_context_probe():

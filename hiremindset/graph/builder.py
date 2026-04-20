@@ -15,7 +15,9 @@ LangGraph 그래프 조립.
                                          emit_question                       │
                                                 ▼                            │
                                     collect_answer   ◀── HITL #1 (answer)    │
-                                                ▼                            │
+                                         │  (일반: evaluate→decide /       │
+                                         │   즉시 accept: 둘 다 생략)        │
+                                         ▼                                 │
                                       evaluate_answer (AI 채점만)            │
                                                 ▼                            │
                                       decide_action    ◀── HITL #2 (action)  │
@@ -90,6 +92,13 @@ def _route_after_seed(state: GraphState) -> str:
     return "loop" if _has_next_round(state) else "done"
 
 
+def _route_after_collect(state: GraphState) -> str:
+    """collect_answer 직후: 즉시 통과면 evaluate·decide를 건너뛰고 decide_action과 동일 분기."""
+    if state.get("skip_evaluate_decide"):
+        return _route_after_decide(state)
+    return "evaluate"
+
+
 def build_graph(
     *,
     checkpointer: BaseCheckpointSaver | None = None,
@@ -157,7 +166,17 @@ def build_graph(
     g.add_edge("flag", "plan_probe")
     g.add_edge("plan_probe", "emit_question")
     g.add_edge("emit_question", "collect_answer")
-    g.add_edge("collect_answer", "evaluate_answer")
+    g.add_conditional_edges(
+        "collect_answer",
+        _route_after_collect,
+        {
+            "evaluate": "evaluate_answer",
+            "seed_fallback": "seed_fallback_probe",
+            "seed_drill": "seed_drill_probe",
+            "loop": "emit_question",
+            "done": "assemble_report",
+        },
+    )
     g.add_edge("evaluate_answer", "decide_action")
     g.add_conditional_edges(
         "decide_action",

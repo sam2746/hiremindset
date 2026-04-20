@@ -216,4 +216,7 @@ def assemble_report(state: GraphState) -> dict[str, Any]:
     flags = list(state.get("suspicion_flags") or [])
     scoring = _compute_scoring(flags)
     markdown = _render_markdown(state, scoring)
-    return {"scoring": scoring, "report_markdown": markdown}
+    out: dict[str, Any] = {"scoring": scoring, "report_markdown": markdown}
+    if state.get("skip_evaluate_decide"):
+        out["skip_evaluate_decide"] = False
+    return out

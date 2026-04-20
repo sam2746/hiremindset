@@ -21,13 +21,19 @@ collect_answer: HITL interrupt #1 — 후보자의 답변 텍스트만 수집.
 기대 응답:
     {
         "answer_text": str,   # 필수 (빈 문자열 허용)
+        "immediate_action": "accept" | None,  # accept면 AI 평가·decide 생략하고 곧바로 통과
     }
+
+``immediate_action="accept"``일 때:
+    답변을 state에 반영한 뒤 ``decide_action``과 동일한 accept 패치(flag resolved 등)를
+    적용하고, ``evaluate_answer`` / 두 번째 interrupt를 건너뛴다.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+from hiremindset.graph.nodes.decide_action import apply_decision_response
 from hiremindset.graph.sources import build_source_excerpts, flag_evidence
 from hiremindset.graph.state import GraphState, ProbingQuestion
 
@@ -54,6 +60,34 @@ def apply_answer_response(
     return {"turns": turns[:-1] + [updated_turn]}
 
 
+def apply_collect_response(
+    state: GraphState, response: dict[str, Any] | None
+) -> GraphState:
+    """interrupt 응답을 state 패치로 변환. ``immediate_action=accept``면 평가 단계 생략."""
+    patch = apply_answer_response(state, response)
+    if not patch:
+        return {}
+
+    resp = response or {}
+    if resp.get("immediate_action") != "accept":
+        return patch
+
+    merged: GraphState = {**state, **patch}
+    dec = apply_decision_response(merged, {"action": "accept"})
+    out: GraphState = {**patch, **dec}
+    out["skip_evaluate_decide"] = True
+
+    log = list(out.get("decision_log") or [])
+    if log:
+        last = dict(log[-1])
+        last["why"] = "면접관 즉시 통과 — AI 평가 생략"
+        last["immediate"] = True
+        log[-1] = last  # type: ignore[assignment]
+        out["decision_log"] = log  # type: ignore[typeddict-item]
+
+    return out
+
+
 def collect_answer(state: GraphState) -> GraphState:
     pqs = list(state.get("probing_questions") or [])
     turns = list(state.get("turns") or [])
@@ -73,4 +107,4 @@ def collect_answer(state: GraphState) -> GraphState:
         "flag_evidence": flag_evidence(state, last_q.get("target_flag_id")),
     }
     response = _interrupt(payload)
-    return apply_answer_response(state, response)
+    return apply_collect_response(state, response)

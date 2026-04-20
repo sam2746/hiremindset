@@ -4,7 +4,7 @@ Streamlit UI.
 원칙: 그래프를 import하지 않고 FastAPI(/session/start, /session/resume)만 호출한다.
 
 Phase 1 이후 한 라운드는 두 개의 HITL 단계로 나뉜다.
-  1) phase="collect_answer" : 후보자 답변 텍스트만 제출
+  1) phase="collect_answer" : 후보자 답변 제출 — (선택) 답변+즉시 통과로 AI 평가 생략
   2) phase="decide_action"  : AI 평가 카드를 본 뒤 면접관이 결정
      - accept   : 통과 (해당 flag resolved)
      - drill    : AI가 심층 기술 질문을 생성해 큐에 투입
@@ -139,21 +139,26 @@ def _start_session(api_base: str) -> None:
         )
 
 
-def _submit_answer(api_base: str, answer: str) -> None:
+def _submit_answer(
+    api_base: str, answer: str, *, immediate_accept: bool = False
+) -> None:
     ss = st.session_state
     if not ss.thread_id or not ss.pending:
         return
     ss.last_error = None
-    ss.history.append({"role": "human", "text": answer, "meta": {}})
-    data = _post(
-        api_base,
-        "/session/resume",
-        {
-            "thread_id": ss.thread_id,
-            "phase": "collect_answer",
-            "answer_text": answer,
-        },
-    )
+    meta: dict[str, Any] = {}
+    if immediate_accept:
+        meta["action"] = "accept"
+        meta["immediate_accept"] = True
+    ss.history.append({"role": "human", "text": answer, "meta": meta})
+    payload: dict[str, Any] = {
+        "thread_id": ss.thread_id,
+        "phase": "collect_answer",
+        "answer_text": answer,
+    }
+    if immediate_accept:
+        payload["immediate_action"] = "accept"
+    data = _post(api_base, "/session/resume", payload)
     if not data:
         return
     _apply_step(data)
@@ -297,10 +302,17 @@ def _render_collect_answer(api_base: str) -> None:
         height=140,
         placeholder="면접관이 후보자의 답변을 대신 입력/요약해 주세요.",
     )
-    if st.button("답변 제출", type="primary"):
-        with st.spinner("AI 평가 중…"):
-            _submit_answer(api_base, answer)
-        st.rerun()
+    b1, b2 = st.columns(2)
+    with b1:
+        if st.button("답변 제출 (AI 평가)", type="primary", use_container_width=True):
+            with st.spinner("AI 평가 중…"):
+                _submit_answer(api_base, answer, immediate_accept=False)
+            st.rerun()
+    with b2:
+        if st.button("답변 + 통과 (평가 생략)", type="secondary", use_container_width=True):
+            with st.spinner("반영 중…"):
+                _submit_answer(api_base, answer, immediate_accept=True)
+            st.rerun()
 
 
 def _fmt_score(v: Any) -> str:
