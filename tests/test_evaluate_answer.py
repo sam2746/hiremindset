@@ -1,7 +1,9 @@
+"""evaluate_answer: AI 채점 결과가 누적되는지 확인. fallback 시드 로직은 별도 노드."""
+
 from hiremindset.graph.nodes.evaluate_answer import evaluate_answer
 
 
-def _base_state(control="continue", answer="답변"):
+def _base_state(answer="응답시간 40% 개선했습니다"):
     return {
         "probing_questions": [
             {
@@ -38,9 +40,7 @@ def _base_state(control="continue", answer="답변"):
                 "resolved": False,
             }
         ],
-        "probe_queue": [],
         "answer_eval": [],
-        "control": control,
     }
 
 
@@ -55,54 +55,20 @@ def _fake_evaluator(last_q, answer_text, target_claims, flag, paragraphs):
     }
 
 
-def test_evaluate_writes_answer_eval_and_stops_when_not_fallback():
-    state = _base_state(control="continue")
-    out = evaluate_answer(state, evaluator=_fake_evaluator)
+def test_appends_answer_eval_with_q_id():
+    out = evaluate_answer(_base_state(), evaluator=_fake_evaluator)
     assert len(out["answer_eval"]) == 1
     assert out["answer_eval"][0]["q_id"] == "pq0"
     assert out["answer_eval"][0]["specificity"] == 0.6
+    # control·queue는 건드리지 않는다.
     assert "probe_queue" not in out
     assert "control" not in out
 
 
-def test_evaluate_returns_empty_when_answer_is_empty():
-    state = _base_state(answer="")
-    out = evaluate_answer(state, evaluator=_fake_evaluator)
+def test_empty_answer_skips_evaluation():
+    out = evaluate_answer(_base_state(answer=""), evaluator=_fake_evaluator)
     assert out == {}
 
 
-def test_evaluate_on_fallback_pushes_new_probe_item_with_inherited_profile():
-    state = _base_state(control="fallback")
-    state["probe_queue"] = [
-        {
-            "id": "q5",
-            "target_claim_ids": ["cX"],
-            "intent": "",
-            "expected_signal": "",
-            "profile": "story",
-            "attempts": 0,
-            "priority": 30,
-            "source": "plan",
-        }
-    ]
-
-    def fake_seeder(last_q, answer_text, target_claims, flag):
-        return "어떤 도구로, 얼마 동안 측정한 값인가요?"
-
-    out = evaluate_answer(
-        state, evaluator=_fake_evaluator, seeder=fake_seeder
-    )
-    assert len(out["answer_eval"]) == 1
-    queue = out["probe_queue"]
-    assert len(queue) == 2
-    new_item = [it for it in queue if it["source"] == "fallback"][0]
-    assert new_item["priority"] == 40  # 30 + 10
-    assert new_item["profile"] == "numeric"  # 직전 질문 profile 승계
-    assert new_item["target_flag_id"] == "f0"
-    assert new_item["pre_generated_text"].startswith("어떤 도구")
-    # fallback 처리 후 control은 continue로 복귀
-    assert out["control"] == "continue"
-
-
-def test_evaluate_no_state_returns_empty():
+def test_no_state_returns_empty():
     assert evaluate_answer({}, evaluator=_fake_evaluator) == {}

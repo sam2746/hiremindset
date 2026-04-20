@@ -1,7 +1,7 @@
 """
 LangGraph 그래프 조립.
 
-흐름:
+흐름 (Phase 1 — 2-interrupt HITL):
     START
       ▼
     ingest ── route_doc_profile ──▶ extract_resume ──┐
@@ -14,14 +14,16 @@ LangGraph 그래프 조립.
                                                 ▼                            │
                                          emit_question                       │
                                                 ▼                            │
-                                    collect_answer  ◀── HITL interrupt       │
+                                    collect_answer   ◀── HITL #1 (answer)    │
                                                 ▼                            │
-                                      evaluate_answer                        │
-                                                │                            │
-                                   ┌────────────┴────────────┐               │
-                                   ▼                         ▼               │
-                               (loop) ◀── 큐 남음          (done) ── END ◀───┘
-                                         & round<max
+                                      evaluate_answer (AI 채점만)            │
+                                                ▼                            │
+                                      decide_action    ◀── HITL #2 (action)  │
+                                   ┌────────────┼────────────┐               │
+                                   ▼            ▼            ▼               │
+                              seed_fallback  (accept/inject) (queue empty)   │
+                                   │            │             ▼              │
+                                   └────► emit_question       END ◀──────────┘
 
 LLM 호출 노드는 builder 인자로 fake를 주입할 수 있게 partial로 래핑한다.
 기본값 None이면 노드 내부에서 Gemini 체인을 만들어 사용한다.
@@ -39,6 +41,7 @@ from langgraph.graph import END, START, StateGraph
 
 from hiremindset.graph.nodes.collect_answer import collect_answer
 from hiremindset.graph.nodes.cross_check import cross_check_claims
+from hiremindset.graph.nodes.decide_action import decide_action
 from hiremindset.graph.nodes.emit_question import emit_question
 from hiremindset.graph.nodes.evaluate_answer import evaluate_answer
 from hiremindset.graph.nodes.extract import (
@@ -48,21 +51,32 @@ from hiremindset.graph.nodes.extract import (
 from hiremindset.graph.nodes.flag import flag_suspicion
 from hiremindset.graph.nodes.ingest import ingest_normalize
 from hiremindset.graph.nodes.plan_probe import plan_probe
+from hiremindset.graph.nodes.seed_fallback import seed_fallback_probe
 from hiremindset.graph.routers import route_doc_profile
 from hiremindset.graph.state import GraphState
 
 
-def _route_after_evaluate(state: GraphState) -> str:
+def _has_next_round(state: GraphState) -> bool:
     queue = state.get("probe_queue") or []
     if not queue:
-        return "done"
+        return False
     strategy = state.get("strategy") or {}
     meta = state.get("meta") or {}
     current_round = int(strategy.get("round", 0))
     max_rounds = int(meta.get("max_rounds", 10))
-    if current_round >= max_rounds:
-        return "done"
-    return "loop"
+    return current_round < max_rounds
+
+
+def _route_after_decide(state: GraphState) -> str:
+    """decide_action 직후 분기: fallback → seed, 아니면 큐 확인 후 loop/done."""
+    if state.get("control") == "fallback":
+        return "seed"
+    return "loop" if _has_next_round(state) else "done"
+
+
+def _route_after_seed(state: GraphState) -> str:
+    """seed_fallback_probe 직후: 큐에 추가됐을 테니 보통 loop."""
+    return "loop" if _has_next_round(state) else "done"
 
 
 def build_graph(
@@ -106,11 +120,12 @@ def build_graph(
     g.add_node("collect_answer", collect_answer)
     g.add_node(
         "evaluate_answer",
-        partial(
-            evaluate_answer,
-            evaluator=answer_evaluator,
-            seeder=fallback_seeder,
-        ),
+        partial(evaluate_answer, evaluator=answer_evaluator),
+    )
+    g.add_node("decide_action", decide_action)
+    g.add_node(
+        "seed_fallback_probe",
+        partial(seed_fallback_probe, seeder=fallback_seeder),
     )
 
     g.add_edge(START, "ingest")
@@ -126,9 +141,19 @@ def build_graph(
     g.add_edge("plan_probe", "emit_question")
     g.add_edge("emit_question", "collect_answer")
     g.add_edge("collect_answer", "evaluate_answer")
+    g.add_edge("evaluate_answer", "decide_action")
     g.add_conditional_edges(
-        "evaluate_answer",
-        _route_after_evaluate,
+        "decide_action",
+        _route_after_decide,
+        {
+            "seed": "seed_fallback_probe",
+            "loop": "emit_question",
+            "done": END,
+        },
+    )
+    g.add_conditional_edges(
+        "seed_fallback_probe",
+        _route_after_seed,
         {"loop": "emit_question", "done": END},
     )
 

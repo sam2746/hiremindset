@@ -1,4 +1,8 @@
-"""build_graph() 스모크 테스트. LLM은 모두 fake를 주입하여 네트워크 없이 돌린다."""
+"""build_graph() 스모크 테스트. LLM은 모두 fake를 주입하여 네트워크 없이 돌린다.
+
+Phase 1부터는 한 라운드가 두 번의 interrupt로 분리된다:
+    emit_question → (HITL #1: answer) → evaluate_answer → (HITL #2: action) → ...
+"""
 
 from __future__ import annotations
 
@@ -29,7 +33,6 @@ def _fake_verifier(claims, pairs, paragraphs):
 
 
 def _fake_detector(claims, paragraphs):
-    # 큐에 들어갈 최소 플래그 1개만 생성
     return [
         {
             "id": "",
@@ -60,7 +63,7 @@ def _fake_evaluator(last_q, answer_text, target_claims, flag, paragraphs):
 
 
 def _fake_seeder(last_q, answer_text, target_claims, flag):
-    return "구체적인 수치는요?"
+    return "그 프로젝트의 .gitignore에는 뭐가 들어있었나요?"
 
 
 def _build():
@@ -75,6 +78,10 @@ def _build():
     )
 
 
+def _cfg(thread_id: str) -> dict:
+    return {"configurable": {"thread_id": thread_id}}
+
+
 def _start_resume(g, thread_id: str):
     return g.invoke(
         {
@@ -85,75 +92,109 @@ def _start_resume(g, thread_id: str):
             },
             "jd": "",
         },
-        {"configurable": {"thread_id": thread_id}},
+        _cfg(thread_id),
     )
 
 
-def test_start_runs_until_first_interrupt():
+def _first_interrupt_payload(result: dict) -> dict:
+    raw = result["__interrupt__"][0]
+    value = getattr(raw, "value", raw)
+    if isinstance(value, tuple):
+        value = value[0]
+    assert isinstance(value, dict)
+    return value
+
+
+def _submit_answer(g, thread_id: str, answer: str) -> dict:
+    """HITL #1에 답변 제출 → decide_action interrupt까지 진행."""
+    return g.invoke(Command(resume={"answer_text": answer}), _cfg(thread_id))
+
+
+def _submit_decision(
+    g, thread_id: str, action: str, injected: str | None = None
+) -> dict:
+    payload = {"action": action}
+    if injected is not None:
+        payload["injected_question"] = injected
+    return g.invoke(Command(resume=payload), _cfg(thread_id))
+
+
+# ---------- tests ----------
+
+def test_start_runs_until_collect_answer_interrupt():
     g = _build()
     out = _start_resume(g, "t-start")
-    assert "__interrupt__" in out
 
-    values = g.get_state({"configurable": {"thread_id": "t-start"}}).values
+    assert "__interrupt__" in out
+    payload = _first_interrupt_payload(out)
+    assert payload["type"] == "collect_answer"
+    assert payload["question"].startswith("Q[")
+
+    values = g.get_state(_cfg("t-start")).values
     assert len(values["claims"]) == 2
     assert len(values["probing_questions"]) == 1
     assert values["strategy"]["round"] == 1
 
 
+def test_answer_submission_runs_evaluate_then_decide_interrupt():
+    g = _build()
+    _start_resume(g, "t-eval")
+    out = _submit_answer(g, "t-eval", "네, 백엔드 전체를 맡았습니다.")
+
+    assert "__interrupt__" in out
+    payload = _first_interrupt_payload(out)
+    assert payload["type"] == "decide_action"
+    assert payload["answer_text"] == "네, 백엔드 전체를 맡았습니다."
+    assert payload["ai_eval"] is not None
+    assert payload["ai_eval"]["specificity"] == 0.5
+
+    values = g.get_state(_cfg("t-eval")).values
+    assert len(values["answer_eval"]) == 1
+    assert values["turns"][-1]["role"] == "human"
+
+
 def test_accept_ends_session_when_queue_empty():
     g = _build()
     _start_resume(g, "t-accept")
-    config = {"configurable": {"thread_id": "t-accept"}}
+    _submit_answer(g, "t-accept", "네, 구체적으로는…")
+    final = _submit_decision(g, "t-accept", "accept")
 
-    final = g.invoke(
-        Command(resume={"answer_text": "네, 구체적으로는…", "action": "accept"}),
-        config,
-    )
     assert "__interrupt__" not in final
-
-    values = g.get_state(config).values
-    assert len(values["turns"]) == 1
-    assert values["turns"][0]["role"] == "human"
-    # accept 시 타깃 flag가 resolved 처리
+    values = g.get_state(_cfg("t-accept")).values
     assert values["suspicion_flags"][0]["resolved"] is True
 
 
 def test_fallback_adds_seeded_probe_and_loops():
     g = _build()
     _start_resume(g, "t-fb")
-    config = {"configurable": {"thread_id": "t-fb"}}
+    _submit_answer(g, "t-fb", "잘 기억이 안 나요")
+    out = _submit_decision(g, "t-fb", "fallback")
 
-    out = g.invoke(
-        Command(resume={"answer_text": "잘 기억이 안 나요", "action": "fallback"}),
-        config,
-    )
-    # seeder가 넣은 새 ProbeItem이 다시 emit → 두 번째 interrupt
     assert "__interrupt__" in out
+    payload = _first_interrupt_payload(out)
+    assert payload["type"] == "collect_answer"
 
-    values = g.get_state(config).values
+    values = g.get_state(_cfg("t-fb")).values
     assert len(values["probing_questions"]) == 2
-    assert values["probing_questions"][1]["text"] == "구체적인 수치는요?"
+    assert values["probing_questions"][1]["text"] == (
+        "그 프로젝트의 .gitignore에는 뭐가 들어있었나요?"
+    )
     assert values["suspicion_flags"][0]["fallback_attempts"] == 1
 
 
 def test_inject_puts_human_question_on_top():
     g = _build()
     _start_resume(g, "t-inj")
-    config = {"configurable": {"thread_id": "t-inj"}}
-
-    out = g.invoke(
-        Command(
-            resume={
-                "answer_text": "…",
-                "action": "inject",
-                "injected_question": "정말 혼자 하셨어요?",
-            }
-        ),
-        config,
+    _submit_answer(g, "t-inj", "…")
+    out = _submit_decision(
+        g, "t-inj", "inject", injected="정말 혼자 하셨어요?"
     )
-    assert "__interrupt__" in out
 
-    values = g.get_state(config).values
+    assert "__interrupt__" in out
+    payload = _first_interrupt_payload(out)
+    assert payload["type"] == "collect_answer"
+
+    values = g.get_state(_cfg("t-inj")).values
     assert values["probing_questions"][-1]["text"] == "정말 혼자 하셨어요?"
 
 
@@ -164,7 +205,7 @@ def test_essay_route_uses_essay_extractor():
             "documents": {"kind": "essay", "raw": "한 문단만", "paragraphs": []},
             "jd": "",
         },
-        {"configurable": {"thread_id": "t-essay"}},
+        _cfg("t-essay"),
     )
-    values = g.get_state({"configurable": {"thread_id": "t-essay"}}).values
+    values = g.get_state(_cfg("t-essay")).values
     assert len(values["claims"]) == 1
