@@ -14,3 +14,6 @@ build/
 .ruff_cache/
 .DS_Store
 .cursor/
+
+# 개인 이력서 샘플(로컬만; 원격에 올리지 않음)
+samples/resume_kimmingyeongmin.txt
