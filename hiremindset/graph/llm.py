@@ -236,13 +236,18 @@ class _LLMFlagList(BaseModel):
 
 
 _FLAG_SYSTEM = (
-    "당신은 면접관 관점에서 후보자 주장의 약점을 탐지합니다.\n"
+    "당신은 면접관 관점에서 후보자 주장의 '명백한' 약점만 탐지합니다.\n"
     "다음 카테고리 중 해당되는 것만 flag로 생성하세요.\n"
     "- cliche_template: 자소서 템플릿/상투어, 구체 디테일 없이 가치 수사만 있는 주장\n"
     "- metric_unsupported: 수치 성과 주장에 측정 방법·기준·단위가 부재\n"
     "- suspected_exaggeration: 스코프·역할이 과장된 정황\n"
     "- inauthentic_company_ref: 회사 언급이 껍데기만, 직무·제품 맥락 부재\n"
-    "severity는 1/3/5만 사용. 애매하면 플래그를 만들지 마세요."
+    "\n"
+    "중요 규칙 (질문 밀도 방어):\n"
+    "1) 한 claim당 최대 1개의 flag만 생성합니다. 가장 결정적인 하나만 고르세요.\n"
+    "2) severity는 3 또는 5만 사용합니다. 1(경미)은 사용하지 마세요.\n"
+    "3) 조금이라도 애매하면 flag를 만들지 마세요. '혹시 그럴 수도'는 제외.\n"
+    "4) 같은 category를 문서 전체에서 과다 생성하지 말고, 가장 대표적인 case 중심으로."
 )
 
 _FLAG_USER = (
@@ -495,18 +500,33 @@ class _FallbackSeedOut(BaseModel):
 
 
 _SEED_SYSTEM = (
-    "당신은 숙련된 면접관입니다. 직전 답변에서 부족했던 지점을 더 좁혀 물어보는\n"
-    "다음 꼬리 질문 한 문장을 생성하세요.\n"
-    "- 직전 답변을 그대로 인용하지 말고, 그 답변이 회피한 지점을 찍어 질문하세요.\n"
-    "- profile을 유지한 채 한 단계 더 구체 수준을 높이세요.\n"
-    "- 반드시 한국어로 한 문장만."
+    "당신은 숙련된 면접관입니다. 후보자가 직전 질문에 '모르겠다/기억 안 난다/모호함'으로 답했습니다.\n"
+    "핵심 원칙: **같은 수치·지표를 다시 캐묻지 말 것**. 대신, 그 경험이 실제였다면\n"
+    "자연스럽게 알 수밖에 없는 '주변 디테일'을 물어 진위를 간접 확인하세요.\n"
+    "\n"
+    "주변 디테일 예시 (맥락에 맞게 택일):\n"
+    "- 배포/운영: .gitignore·.env·Dockerfile에 들어간 항목, CI 파이프라인 파일명과 단계, 롤백 경험, 장애 시 알림 채널\n"
+    "- 성능/최적화: 측정 스크립트 경로·도구명, 벤치마크 당시 서버 스펙, 비교군, 평소 관찰하던 지표 대시보드\n"
+    "- 팀/의사결정: 해당 결정이 남은 문서 위치(PR/Notion/Slack), 반대 의견 낸 동료 포지션, 리뷰어가 지적한 부분\n"
+    "- API/설계: 실제 엔드포인트 경로 1~2개, 인증 방식, 에러 응답 포맷, 버저닝 전략\n"
+    "- 협업: 스프린트 주기, 스탠드업 요일, 온보딩 때 처음 잡은 태스크, 코드 오너십 구조\n"
+    "\n"
+    "재시도 강도 조절:\n"
+    "- fallback_attempts=0~1: 주변 디테일 중 가장 실무적인 하나를 콕 집어 물으세요.\n"
+    "- fallback_attempts>=2: 더 간접적·회고성으로 전환. 당시 불편했던 점/남은 인상/반복된 실수 같은 체험 흔적을 물으세요.\n"
+    "\n"
+    "출력 규칙:\n"
+    "- 반드시 한국어 한 문장.\n"
+    "- 직전 답변을 그대로 반복해 인용하지 말 것.\n"
+    "- 원 질문과 같은 수치를 다시 요구하지 말 것."
 )
 
 _SEED_USER = (
     "# 원 질문 (profile={profile})\n{question}\n\n"
     "# 후보자 답변\n{answer}\n\n"
     "# 대상 claims\n{claims}\n\n"
-    "# 플래그 근거\n{evidence}\n"
+    "# 플래그 근거\n{evidence}\n\n"
+    "# fallback_attempts\n{fallback_attempts}\n"
 )
 
 
@@ -545,6 +565,7 @@ def default_fallback_seeder(
                 "answer": answer_text,
                 "claims": claims_str,
                 "evidence": flag.get("evidence") if flag else "(없음)",
+                "fallback_attempts": int(flag.get("fallback_attempts", 0)) if flag else 0,
             }
         )
         return result.text.strip()

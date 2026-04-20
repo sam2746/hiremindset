@@ -35,14 +35,16 @@ def test_rule_timeline_conflict_only_for_timeline_contradicts():
     assert flags[0]["severity"] == 4
 
 
-def test_rule_technical_probe_detects_tech_tokens():
+def test_rule_technical_probe_only_when_two_or_more_tokens():
+    """토큰 1개는 단순 언급이라 스킵, 2개 이상 뭉쳐 있을 때만 probe 대상."""
     claims = [
         _claim("c0", "Redis 사용", "factual", ["Redis"]),
-        _claim("c1", "책임감 있게 일함", "value", ["책임감"]),
+        _claim("c1", "FastAPI + PostgreSQL 조합으로 구축", "factual", ["FastAPI", "PostgreSQL"]),
+        _claim("c2", "책임감 있게 일함", "value", ["책임감"]),
     ]
     flags = _rule_technical_probe(claims)
     assert len(flags) == 1
-    assert flags[0]["claim_ids"] == ["c0"]
+    assert flags[0]["claim_ids"] == ["c1"]
     assert flags[0]["category"] == "technical_probe_needed"
 
 
@@ -60,7 +62,12 @@ def test_rule_depth_collapse_flags_paragraph_with_low_entity_diversity():
 
 def test_flag_suspicion_merges_rules_and_llm_and_assigns_ids():
     claims = [
-        _claim("c0", "Redis 도입으로 응답시간 개선", "achievement", ["Redis"]),
+        _claim(
+            "c0",
+            "Redis + Kafka 조합으로 응답시간 개선",
+            "achievement",
+            ["Redis", "Kafka"],
+        ),
     ]
 
     def fake_detector(claims_in, paragraphs):
@@ -104,7 +111,7 @@ def test_flag_suspicion_appends_after_existing_flags():
             "resolved": False,
         }
     ]
-    claims = [_claim("c0", "Redis 도입", "factual", ["Redis"])]
+    claims = [_claim("c0", "Redis + Kafka 도입", "factual", ["Redis", "Kafka"])]
     state = {
         "claims": claims,
         "documents": {"kind": "resume", "raw": "", "paragraphs": []},

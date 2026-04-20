@@ -82,19 +82,23 @@ def _rule_timeline_conflict(
 
 
 def _rule_technical_probe(claims: list[Claim]) -> list[SuspicionFlag]:
+    """한 claim에 기술 스택 토큰이 2개 이상 뭉쳐 있을 때만 flag.
+    토큰 1개는 단순 언급일 수 있어 질문 밀도만 높이므로 제외한다.
+    """
     flags: list[SuspicionFlag] = []
     for c in claims:
         ents = {e.strip().lower() for e in (c.get("entities") or [])}
         hits = ents & TECH_TOKENS
-        if hits:
-            flags.append(
-                _new_flag(
-                    claim_ids=[c["id"]],
-                    category="technical_probe_needed",
-                    severity=2,
-                    evidence=f"기술 키워드({', '.join(sorted(hits))}) 언급: {c['text']}",
-                )
+        if len(hits) < 2:
+            continue
+        flags.append(
+            _new_flag(
+                claim_ids=[c["id"]],
+                category="technical_probe_needed",
+                severity=2,
+                evidence=f"기술 키워드({', '.join(sorted(hits))}) 언급: {c['text']}",
             )
+        )
     return flags
 
 
