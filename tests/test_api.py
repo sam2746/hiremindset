@@ -91,7 +91,8 @@ def test_session_start_returns_collect_answer_phase():
     assert pq and pq["text"].startswith("Q[")
     assert pq["phase"] == "collect_answer"
     assert pq["ai_eval"] is None
-    assert pq["asked_round"] == 1
+    # emit_question이 pq.asked_round에 넣는 값(첫 질문은 보통 0)과 일치해야 함
+    assert pq["asked_round"] == 0
     # 출처 원문이 함께 내려와야 한다.
     assert pq["source_excerpts"], "첫 질문부터 source_excerpts가 포함돼야 함"
     first = pq["source_excerpts"][0]

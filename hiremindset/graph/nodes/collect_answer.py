@@ -100,6 +100,7 @@ def collect_answer(state: GraphState) -> GraphState:
         "question_id": last_q["id"],
         "queue_id": last_q["queue_id"],
         "question": last_q["text"],
+        "asked_round": int(last_q.get("asked_round", 0)),
         "target_flag_id": last_q.get("target_flag_id"),
         "target_claim_ids": list(last_q.get("target_claim_ids") or []),
         "profile": last_q.get("profile"),

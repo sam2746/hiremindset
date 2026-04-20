@@ -111,6 +111,9 @@ def _build_pending(payload: dict[str, Any], state_values: dict[str, Any]) -> Pen
         if isinstance(e, dict)
     ]
 
+    asked = payload.get("asked_round")
+    if asked is None:
+        asked = strategy.get("round", 0)
     return PendingQuestion(
         phase=phase,  # type: ignore[arg-type]
         question_id=str(payload.get("question_id") or ""),
@@ -119,7 +122,7 @@ def _build_pending(payload: dict[str, Any], state_values: dict[str, Any]) -> Pen
         profile=payload.get("profile"),
         target_flag_id=payload.get("target_flag_id"),
         target_claim_ids=list(payload.get("target_claim_ids") or []),
-        asked_round=int(strategy.get("round", 0)),
+        asked_round=int(asked),
         source_excerpts=source_excerpts,
         flag_evidence=payload.get("flag_evidence"),
         answer_text=payload.get("answer_text") if phase == "decide_action" else None,

@@ -162,7 +162,13 @@ def _submit_answer(
     if not data:
         return
     _apply_step(data)
-    # decide_action phase면 채팅 히스토리에는 기록하지 않고 카드로만 보여준다.
+    # 즉시 통과(immediate accept)면 evaluate/decide를 건너뛰고 곧바로 다음 collect_answer로
+    # 이어지므로, 여기서도 새 질문을 히스토리에 올려야 한다 (decide_action 경로와 동일).
+    # decide_action 단계로 가는 경우엔 아래 조건이 거짓이라 시뮬레이터 턴을 추가하지 않음.
+    if ss.pending and ss.pending.get("phase") == "collect_answer":
+        ss.history.append(
+            {"role": "simulator", "text": ss.pending["text"], "meta": ss.pending}
+        )
 
 
 def _submit_decision(api_base: str, action: str, injected: str) -> None:
