@@ -15,7 +15,7 @@ from typing import Literal, NotRequired, TypedDict
 
 # ---------- shared literals ----------
 
-DocKind = Literal["resume", "essay", "mixed"]
+DocKind = Literal["resume", "essay"] #리터럴은 자바의 enum 같은 느낌
 InterviewMode = Literal["technical", "behavioral", "mixed"]
 
 FlagCategory = Literal[
@@ -28,7 +28,7 @@ FlagCategory = Literal[
     "inauthentic_company_ref",  # 다른 회사명 혼용 등 성의 문제
 ]
 
-ProbeProfile = Literal["numeric", "mechanism", "story", "consistency"]
+ProbeProfile = Literal["numeric", "mechanism", "story", "consistency"] 
 ClaimType = Literal["factual", "achievement", "timeline", "value"]
 TurnRole = Literal["simulator", "human"]
 EvalSuggestion = Literal["mechanism", "drill", "done"]
@@ -38,19 +38,19 @@ ControlSignal = Literal["continue", "fallback", "hitl", "done"]
 
 # ---------- inputs / documents ----------
 
-class Paragraph(TypedDict):
+class Paragraph(TypedDict): #파라미터 딕셔너리. 이걸 활용해서 문서를 파싱하고 저장할 수 있음.
     id: str
     text: str
     section: NotRequired[str]
 
 
-class Documents(TypedDict):
+class Documents(TypedDict): #문서 딕셔너리. 이걸 활용해서 문서를 파싱하고 저장할 수 있음.
     kind: DocKind
     raw: str
     paragraphs: list[Paragraph]
 
 
-class Meta(TypedDict, total=False):
+class Meta(TypedDict, total=False): #메타 딕셔너리. 이걸 활용해서 메타 데이터를 저장할 수 있음.
     interview_mode: InterviewMode
     max_rounds: int
     max_fallbacks: int
@@ -59,7 +59,7 @@ class Meta(TypedDict, total=False):
 
 # ---------- claims & verification ----------
 
-class Claim(TypedDict):
+class Claim(TypedDict): #클레임 딕셔너리. 이걸 활용해서 클레임을 파싱하고 저장할 수 있음.
     id: str
     text: str
     type: ClaimType
@@ -69,7 +69,7 @@ class Claim(TypedDict):
     confidence: NotRequired[float]
 
 
-class CrossCheckPair(TypedDict):
+class CrossCheckPair(TypedDict): #크로스 체크 페어 딕셔너리. 이걸 활용해서 크로스 체크를 파싱하고 저장할 수 있음.
     claim_ids: tuple[str, str]
     verdict: CrossVerdict
     rationale: str
@@ -78,7 +78,7 @@ class CrossCheckPair(TypedDict):
 class SuspicionFlag(TypedDict):
     id: str
     claim_ids: list[str]
-    category: FlagCategory
+    category: FlagCategory #플래그 리터럴에서 갖고 옴
     severity: int  # 1..5
     evidence: str
     strikes: int
@@ -86,7 +86,7 @@ class SuspicionFlag(TypedDict):
     resolved: bool
 
 
-# ---------- probing (plan vs emit split) ----------
+# ---------- probing (plan vs emit split) ---------- 
 
 class ProbeItem(TypedDict):
     """계획 단위. emit_question에서 문장화되어 probing_questions로 이동."""
