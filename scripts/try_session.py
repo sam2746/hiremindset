@@ -7,8 +7,8 @@
 
 Phase 1 이후 한 라운드는 두 번의 interrupt로 나뉜다:
   1) collect_answer  : 답변 텍스트만 입력
-  2) decide_action   : AI 평가를 본 뒤 a/d/f/p/i 결정
-     a=accept / d=drill / f=fallback / p=pass / i=inject
+  2) decide_action   : AI 평가를 본 뒤 a/d/f/p/s/i 결정
+     a=accept / d=drill / f=fallback / p=pass / s=skip / i=inject
 """
 
 from __future__ import annotations
@@ -105,12 +105,13 @@ def _prompt_decision() -> dict:
         "d": "drill",
         "f": "fallback",
         "p": "pass",
+        "s": "skip",
         "i": "inject",
     }
     action = ""
     while action not in mapping:
         action = input(
-            "action [a=accept / d=drill / f=fallback / p=pass / i=inject] > "
+            "action [a=accept / d=drill / f=fallback / p=pass / s=skip / i=inject] > "
         ).strip().lower()
     payload: dict = {"action": mapping[action]}
     if action == "i":

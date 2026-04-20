@@ -186,6 +186,19 @@ def test_pass_on_flag_probe_ends_session_without_resolving():
     flag = data["summary"]["suspicion_flags"][0]
     assert flag["resolved"] is False
     assert flag["fallback_attempts"] == 0
+    assert any(e.get("action") == "pass" for e in data["summary"]["decision_log"])
+
+
+def test_skip_on_flag_probe_ends_session_without_resolving():
+    start = _start()
+    _pass_context(start["thread_id"])
+    _answer(start["thread_id"], "괜찮은 답인데 이 질문은 쓰지 않을게요")
+    r = _decide(start["thread_id"], "skip")
+    assert r.status_code == 200
+    data = r.json()
+    assert data["done"] is True
+    assert data["summary"]["suspicion_flags"][0]["resolved"] is False
+    assert any(e.get("action") == "skip" for e in data["summary"]["decision_log"])
 
 
 def test_drill_on_flag_probe_seeds_drill_question():

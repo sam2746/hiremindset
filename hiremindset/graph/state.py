@@ -133,7 +133,7 @@ class AnswerEval(TypedDict):
 
 # ---------- control / strategy / scoring ----------
 
-DecisionAction = Literal["accept", "fallback", "drill", "pass", "inject"]
+DecisionAction = Literal["accept", "fallback", "drill", "pass", "skip", "inject"]
 
 
 class DecisionLogEntry(TypedDict, total=False):

@@ -231,7 +231,7 @@ def test_inject_puts_human_question_on_top():
 
 
 def test_pass_on_flag_probe_does_not_resolve_or_bump():
-    """pass는 flag를 건드리지 않고 다음 큐로 넘어간다."""
+    """pass는 답변이 추궁할 가치 없을 때 — flag를 건드리지 않고 다음 큐로."""
     g = _build()
     _start_resume(g, "t-pass")
     _pass_context_probe(g, "t-pass")
@@ -248,6 +248,22 @@ def test_pass_on_flag_probe_does_not_resolve_or_bump():
     # 미해결 flag가 있으므로 감점이 반영돼야 한다 (severity 3 → 9점 감점, 강감점 X)
     assert values["scoring"]["total"] < 100
     assert values["scoring"]["severe_penalty_triggered"] is False
+    assert any(e.get("action") == "pass" for e in values["decision_log"])
+
+
+def test_skip_on_flag_probe_does_not_resolve_like_pass():
+    """skip은 추천 질문을 쓰지 않을 때 — 그래프 분기는 pass와 동일."""
+    g = _build()
+    _start_resume(g, "t-skip")
+    _pass_context_probe(g, "t-skip")
+
+    _submit_answer(g, "t-skip", "답은 괜찮은데 이 질문은 안 물을래요")
+    final = _submit_decision(g, "t-skip", "skip")
+
+    assert "__interrupt__" not in final
+    values = g.get_state(_cfg("t-skip")).values
+    assert values["suspicion_flags"][0]["resolved"] is False
+    assert any(e.get("action") == "skip" for e in values["decision_log"])
 
 
 def test_drill_on_flag_probe_seeds_drill_question():

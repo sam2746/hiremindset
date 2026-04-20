@@ -9,7 +9,8 @@ Phase 1 이후 한 라운드는 두 개의 HITL 단계로 나뉜다.
      - accept   : 통과 (해당 flag resolved)
      - drill    : AI가 심층 기술 질문을 생성해 큐에 투입
      - fallback : AI가 주변 디테일 폴백 질문을 생성
-     - pass     : 추궁 가치 없음, 그냥 넘김
+     - pass     : 답변이 추궁할 가치 없음 — 다음으로
+     - skip     : 이 추천 질문은 쓰지 않음 — 다음으로
      - inject   : 면접관이 직접 다음 질문 주입
 """
 
@@ -24,19 +25,21 @@ import streamlit as st
 DEFAULT_API = os.environ.get("API_PUBLIC_URL", "http://127.0.0.1:8000").rstrip("/")
 GA_ID = os.environ.get("GA_MEASUREMENT_ID", "").strip()
 
-ACTIONS = ("accept", "drill", "fallback", "pass", "inject")
+ACTIONS = ("accept", "drill", "fallback", "pass", "skip", "inject")
 ACTION_LABELS: dict[str, str] = {
     "accept": "✅ 통과",
     "drill": "🔬 심층 질문 생성하기",
     "fallback": "🩹 폴백 (주변 디테일)",
-    "pass": "⏭️ 그냥 넘기기",
+    "pass": "⏭️ 답변 스킵 (추궁 불가)",
+    "skip": "⏭️ 추천 질문 건너뛰기",
     "inject": "✍️ 직접 질문 주입",
 }
 ACTION_HELP = (
     "통과 — 답변이 충분, 다음 질문으로 (해당 flag resolved)\n"
     "심층 질문 생성하기 — 답변을 기반으로 신입에게 요구될 만한 기술적 심층 질문을 AI가 생성해 큐에 투입\n"
     "폴백 — 답이 부족해 보일 때 AI가 주변 디테일을 캐묻는 질문을 생성\n"
-    "그냥 넘기기 — 추궁할 가치조차 없는 답변. flag는 그대로 두고 다음 질문으로\n"
+    "답변 스킵 — 답변이 너무 빈약·무의미해 더 물어볼 가치가 없음. flag는 그대로, 다음 큐로\n"
+    "추천 질문 건너뛰기 — 답변은 괜찮지만 이 시스템 추천 질문 라인은 쓰지 않고 다음으로\n"
     "직접 질문 주입 — 면접관이 직접 이어갈 질문을 써서 큐 최상단에 투입"
 )
 

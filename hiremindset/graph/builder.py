@@ -75,7 +75,7 @@ def _route_after_decide(state: GraphState) -> str:
 
     - control='fallback' → seed_fallback
     - control='drill'    → seed_drill
-    - 그 외 (accept/pass/inject 후 continue) → 큐 확인 후 loop/done
+    - 그 외 (accept/pass/skip/inject 후 continue) → 큐 확인 후 loop/done
     """
     control = state.get("control")
     if control == "fallback":

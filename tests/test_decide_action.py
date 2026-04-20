@@ -1,4 +1,4 @@
-"""decide_action 순수 로직 (accept/fallback/drill/pass/inject 분기)."""
+"""decide_action 순수 로직 (accept/fallback/drill/pass/skip/inject 분기)."""
 
 import pytest
 
@@ -103,6 +103,15 @@ def test_pass_sets_continue_without_touching_flag_or_queue():
     assert out["control"] == "continue"
     assert "suspicion_flags" not in out
     assert "probe_queue" not in out
+
+
+def test_skip_sets_continue_like_pass_but_distinct_log():
+    out = apply_decision_response(_base_state(), {"action": "skip"})
+    assert out["control"] == "continue"
+    assert "suspicion_flags" not in out
+    log = out.get("decision_log") or []
+    assert log[-1]["action"] == "skip"
+    assert log[-1]["why"] == "추천 질문 미사용 — 다음 큐로"
 
 
 def test_inject_requires_injected_question():

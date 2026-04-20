@@ -2,7 +2,7 @@
 
 Phase 1부터 한 라운드는 두 번의 interrupt로 나뉜다.
 - phase="collect_answer" : 후보자 답변 텍스트만 수집
-- phase="decide_action"  : AI 평가를 본 뒤 면접관이 accept/fallback/drill/pass/inject 결정
+- phase="decide_action"  : AI 평가 후 accept/fallback/drill/pass/skip/inject 결정
 
 /session/resume 요청에는 클라이언트가 어느 phase로 응답하는지 싣는다.
 """
@@ -37,7 +37,7 @@ class SessionResumeRequest(BaseModel):
         description="phase=collect_answer일 때 후보자 답변.",
     )
     action: (
-        Literal["accept", "fallback", "drill", "pass", "inject"] | None
+        Literal["accept", "fallback", "drill", "pass", "skip", "inject"] | None
     ) = Field(
         default=None,
         description="phase=decide_action일 때 면접관 결정.",
