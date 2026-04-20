@@ -104,6 +104,29 @@ def test_session_start_rejects_empty_text():
     assert r.status_code == 422
 
 
+def test_session_start_honors_max_rounds_override():
+    r = client.post(
+        "/session/start",
+        json={
+            "kind": "resume",
+            "text": "한 줄\n두 줄",
+            "jd": "",
+            "max_rounds": 5,
+        },
+    )
+    assert r.status_code == 200, r.text
+    summary = r.json()["summary"]
+    assert summary["strategy"]["max_rounds"] == 5
+
+
+def test_session_start_rejects_out_of_range_max_rounds():
+    r = client.post(
+        "/session/start",
+        json={"kind": "resume", "text": "x", "jd": "", "max_rounds": 0},
+    )
+    assert r.status_code == 422
+
+
 def test_answer_transitions_to_decide_action_phase_with_ai_eval():
     start = _start()
     r = _answer(start["thread_id"], "응답시간을 k6로 1시간 측정했습니다")

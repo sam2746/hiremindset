@@ -152,18 +152,18 @@ def session_start(
 ) -> SessionStepResponse:
     thread_id = uuid.uuid4().hex
     config = {"configurable": {"thread_id": thread_id}}
+    initial: dict[str, Any] = {
+        "documents": {
+            "kind": body.kind,
+            "raw": body.text,
+            "paragraphs": [],
+        },
+        "jd": body.jd,
+    }
+    if body.max_rounds is not None:
+        initial["meta"] = {"max_rounds": body.max_rounds}
     try:
-        result = graph.invoke(
-            {
-                "documents": {
-                    "kind": body.kind,
-                    "raw": body.text,
-                    "paragraphs": [],
-                },
-                "jd": body.jd,
-            },
-            config,
-        )
+        result = graph.invoke(initial, config)
     except Exception as e:  # noqa: BLE001 — 개발 중 원인 그대로 노출
         raise HTTPException(status_code=500, detail=str(e)) from e
     return _to_step(thread_id, result, graph)

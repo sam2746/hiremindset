@@ -70,6 +70,7 @@ def _init_state() -> None:
     ss.setdefault("kind", "resume")
     ss.setdefault("resume_text", "")
     ss.setdefault("jd_text", "")
+    ss.setdefault("max_rounds", 20)
     ss.setdefault("action", "accept")
     ss.setdefault("_decide_for_qid", None)
 
@@ -119,7 +120,12 @@ def _start_session(api_base: str) -> None:
     data = _post(
         api_base,
         "/session/start",
-        {"kind": ss.kind, "text": ss.resume_text, "jd": ss.jd_text},
+        {
+            "kind": ss.kind,
+            "text": ss.resume_text,
+            "jd": ss.jd_text,
+            "max_rounds": int(ss.max_rounds),
+        },
     )
     if not data:
         return
@@ -485,6 +491,20 @@ def main() -> None:
 
     with st.sidebar:
         api_base = st.text_input("API URL", value=DEFAULT_API).rstrip("/")
+        st.divider()
+        st.session_state.max_rounds = st.slider(
+            "최대 라운드 수",
+            min_value=3,
+            max_value=40,
+            value=int(st.session_state.max_rounds),
+            step=1,
+            help=(
+                "세션당 허용되는 최대 라운드. context probe + flag 질문 "
+                "+ 폴백/심층/주입 질문을 전부 포함한 숫자입니다. "
+                "세션 시작 이후에는 새로 시작할 때 반영됩니다."
+            ),
+            disabled=bool(st.session_state.thread_id),
+        )
         st.divider()
         if st.session_state.thread_id:
             st.code(f"thread = {st.session_state.thread_id[:12]}…")

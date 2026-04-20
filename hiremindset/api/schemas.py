@@ -18,6 +18,12 @@ class SessionStartRequest(BaseModel):
     kind: Literal["resume", "essay"]
     text: str = Field(..., min_length=1, description="후보자 이력서/자기소개서 원문")
     jd: str = Field(default="", description="선택. 채용 JD 원문")
+    max_rounds: int | None = Field(
+        default=None,
+        ge=1,
+        le=50,
+        description="해당 세션의 최대 라운드 수. 미지정 시 그래프 기본값 사용.",
+    )
 
 
 class SessionResumeRequest(BaseModel):
