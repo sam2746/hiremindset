@@ -46,6 +46,8 @@ from hiremindset.graph.sources import build_source_excerpts, flag_evidence
 from hiremindset.graph.state import (
     AnswerEval,
     ControlSignal,
+    DecisionAction,
+    DecisionLogEntry,
     GraphState,
     ProbeItem,
     ProbingQuestion,
@@ -139,6 +141,16 @@ def apply_decision_response(
         control = "continue"
 
     patch["control"] = control
+
+    # decision_log: 라운드별 결정 기록 (리포트·감사용)
+    turns = state.get("turns") or []
+    answer_text = str(turns[-1].get("answer_text") if turns else "")
+    ai_eval = _latest_eval(state, last_q["id"])
+    log_entry = _build_decision_log(
+        state, last_q, answer_text, action, ai_eval  # type: ignore[arg-type]
+    )
+    patch["decision_log"] = list(state.get("decision_log") or []) + [log_entry]
+
     return patch
 
 
@@ -147,6 +159,46 @@ def _latest_eval(state: GraphState, q_id: str) -> AnswerEval | None:
         if ev.get("q_id") == q_id:
             return ev
     return None
+
+
+_ACTION_WHY = {
+    "accept": "면접관 승인",
+    "fallback": "답변 부족 — 폴백 시드",
+    "drill": "기술 심층 추가 질문",
+    "pass": "추궁 가치 없음 — 스킵",
+    "inject": "면접관 직접 주입",
+}
+
+
+def _build_decision_log(
+    state: GraphState,
+    last_q: ProbingQuestion,
+    answer_text: str,
+    action: DecisionAction,
+    ai_eval: AnswerEval | None,
+) -> DecisionLogEntry:
+    strategy = state.get("strategy") or {}
+    entry: DecisionLogEntry = {
+        "round": int(strategy.get("round", 0)),
+        "question_id": last_q["id"],
+        "question": last_q.get("text", ""),
+        "answer_text": answer_text,
+        "action": action,
+        "why": _ACTION_WHY[action],
+        "fallback_used": action == "fallback",
+        "chosen_probe_id": last_q.get("queue_id", ""),
+    }
+    if last_q.get("target_flag_id"):
+        entry["flag_id"] = last_q["target_flag_id"]
+    if last_q.get("profile"):
+        entry["profile"] = str(last_q["profile"])
+    if ai_eval:
+        entry["ai_suggest"] = list(ai_eval.get("suggest") or [])
+        entry["ai_specificity"] = float(ai_eval.get("specificity", 0.0))
+        entry["ai_consistency"] = float(ai_eval.get("consistency", 0.0))
+        entry["ai_epistemic"] = float(ai_eval.get("epistemic", 0.0))
+        entry["ai_hedge"] = bool(ai_eval.get("refusal_or_hedge", False))
+    return entry
 
 
 def decide_action(state: GraphState) -> GraphState:

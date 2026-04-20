@@ -64,8 +64,11 @@ def _summarize(values: dict[str, Any]) -> dict[str, Any]:
         "probing_questions": values.get("probing_questions") or [],
         "turns": values.get("turns") or [],
         "answer_eval": values.get("answer_eval") or [],
+        "decision_log": values.get("decision_log") or [],
         "strategy": values.get("strategy") or {},
         "documents": values.get("documents") or {},
+        "scoring": values.get("scoring"),
+        "report_markdown": values.get("report_markdown"),
     }
 
 

@@ -40,6 +40,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import END, START, StateGraph
 
+from hiremindset.graph.nodes.assemble_report import assemble_report
 from hiremindset.graph.nodes.collect_answer import collect_answer
 from hiremindset.graph.nodes.cross_check import cross_check_claims
 from hiremindset.graph.nodes.decide_action import decide_action
@@ -142,6 +143,7 @@ def build_graph(
         "seed_drill_probe",
         partial(seed_drill_probe, seeder=drill_seeder),
     )
+    g.add_node("assemble_report", assemble_report)
 
     g.add_edge(START, "ingest")
     g.add_conditional_edges(
@@ -164,18 +166,19 @@ def build_graph(
             "seed_fallback": "seed_fallback_probe",
             "seed_drill": "seed_drill_probe",
             "loop": "emit_question",
-            "done": END,
+            "done": "assemble_report",
         },
     )
     g.add_conditional_edges(
         "seed_fallback_probe",
         _route_after_seed,
-        {"loop": "emit_question", "done": END},
+        {"loop": "emit_question", "done": "assemble_report"},
     )
     g.add_conditional_edges(
         "seed_drill_probe",
         _route_after_seed,
-        {"loop": "emit_question", "done": END},
+        {"loop": "emit_question", "done": "assemble_report"},
     )
+    g.add_edge("assemble_report", END)
 
     return g.compile(checkpointer=checkpointer or InMemorySaver())

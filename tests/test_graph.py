@@ -186,6 +186,11 @@ def test_accept_through_context_then_flag_probe_ends_session():
     assert "__interrupt__" not in final
     values = g.get_state(_cfg("t-accept")).values
     assert values["suspicion_flags"][0]["resolved"] is True
+    # 세션 종료 시 assemble_report가 점수+리포트를 채워야 한다.
+    assert values["scoring"]["total"] == 100  # 모두 resolved
+    assert "HireMindset 인터뷰 리포트" in values["report_markdown"]
+    # decision_log도 누적돼 있어야 한다 (context + flag = 2건)
+    assert len(values["decision_log"]) == 2
 
 
 def test_fallback_on_flag_probe_seeds_next_question():
@@ -240,6 +245,9 @@ def test_pass_on_flag_probe_does_not_resolve_or_bump():
     flag = values["suspicion_flags"][0]
     assert flag["resolved"] is False
     assert flag["fallback_attempts"] == 0
+    # 미해결 flag가 있으므로 감점이 반영돼야 한다 (severity 3 → 9점 감점, 강감점 X)
+    assert values["scoring"]["total"] < 100
+    assert values["scoring"]["severe_penalty_triggered"] is False
 
 
 def test_drill_on_flag_probe_seeds_drill_question():

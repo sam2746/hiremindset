@@ -386,15 +386,45 @@ def _render_pending(api_base: str) -> None:
 def _render_summary() -> None:
     summary = st.session_state.summary or {}
     strategy = summary.get("strategy") or {}
+    scoring = summary.get("scoring") or {}
+    report_md = summary.get("report_markdown") or ""
+
     st.success(
         f"세션 종료 · round {strategy.get('round', '?')} / "
         f"max {strategy.get('max_rounds', '?')}"
     )
+
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Claims", len(summary.get("claims") or []))
-    c2.metric("Suspicion", len(summary.get("suspicion_flags") or []))
-    c3.metric("Questions", len(summary.get("probing_questions") or []))
-    c4.metric("Answers", len(summary.get("answer_eval") or []))
+    total = scoring.get("total")
+    base = scoring.get("base", 100)
+    c1.metric(
+        "종합 점수",
+        f"{total} / {base}" if total is not None else "-",
+        delta=(
+            "⚠️ 강감점" if scoring.get("severe_penalty_triggered") else None
+        ),
+        delta_color="inverse",
+    )
+    flags = summary.get("suspicion_flags") or []
+    resolved = sum(1 for f in flags if f.get("resolved"))
+    c2.metric("Flag 해소", f"{resolved} / {len(flags)}")
+    c3.metric("질문 수", len(summary.get("probing_questions") or []))
+    c4.metric("답변 수", len(summary.get("answer_eval") or []))
+
+    if report_md:
+        st.markdown("### 📝 리포트")
+        st.markdown(report_md)
+        st.download_button(
+            "리포트 Markdown 다운로드",
+            data=report_md,
+            file_name="hiremindset_report.md",
+            mime="text/markdown",
+        )
+
+    decisions = summary.get("decision_log") or []
+    if decisions:
+        with st.expander("결정 로그 (표)", expanded=False):
+            st.dataframe(decisions, use_container_width=True)
 
 
 def _render_dashboard() -> None:

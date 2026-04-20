@@ -133,11 +133,31 @@ class AnswerEval(TypedDict):
 
 # ---------- control / strategy / scoring ----------
 
-class DecisionLogEntry(TypedDict):
+DecisionAction = Literal["accept", "fallback", "drill", "pass", "inject"]
+
+
+class DecisionLogEntry(TypedDict, total=False):
+    """라운드별 면접관 결정 + AI 평가 스냅샷을 한 줄로 남긴다.
+
+    assemble_report가 이 로그를 그대로 테이블로 옮기고, 감점 추적의 1차 근거로 쓴다.
+    """
+
     round: int
+    question_id: str
+    question: str
+    answer_text: str
+    action: DecisionAction
+    flag_id: str
+    profile: str
+    ai_suggest: list[str]
+    ai_specificity: float
+    ai_consistency: float
+    ai_epistemic: float
+    ai_hedge: bool
+    # 과거 스텁과의 호환 필드 (리포트용)
     why: str
     fallback_used: bool
-    chosen_probe_id: NotRequired[str]
+    chosen_probe_id: str
 
 
 class Strategy(TypedDict, total=False):

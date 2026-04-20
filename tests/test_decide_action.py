@@ -119,3 +119,28 @@ def test_unknown_action_raises():
 
 def test_no_questions_returns_empty_patch():
     assert apply_decision_response({}, {"action": "accept"}) == {}
+
+
+def test_decision_log_appended_with_ai_eval_snapshot():
+    out = apply_decision_response(_base_state(), {"action": "fallback"})
+    log = out.get("decision_log") or []
+    assert len(log) == 1
+    entry = log[0]
+    assert entry["action"] == "fallback"
+    assert entry["question_id"] == "pq0"
+    assert entry["flag_id"] == "f0"
+    assert entry["profile"] == "numeric"
+    assert entry["ai_suggest"] == ["drill"]
+    assert entry["ai_specificity"] == 0.3
+    assert entry["ai_hedge"] is True
+    assert entry["fallback_used"] is True
+
+
+def test_decision_log_preserves_prior_entries():
+    state = _base_state()
+    state["decision_log"] = [{"round": 1, "action": "accept", "why": "prev"}]
+    out = apply_decision_response(state, {"action": "pass"})
+    log = out["decision_log"]
+    assert len(log) == 2
+    assert log[0]["round"] == 1  # 기존 항목 보존
+    assert log[1]["action"] == "pass"

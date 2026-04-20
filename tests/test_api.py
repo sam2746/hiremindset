@@ -134,6 +134,10 @@ def test_accept_closes_session_after_context_and_flag_probe():
     summary = data["summary"]
     assert summary and summary["probing_questions"]
     assert summary["turns"][0]["role"] == "human"
+    # report / scoring / decision_log가 summary에 실려 내려와야 한다.
+    assert summary["scoring"]["total"] == 100
+    assert "HireMindset 인터뷰 리포트" in summary["report_markdown"]
+    assert len(summary["decision_log"]) >= 2
 
 
 def test_fallback_on_flag_probe_produces_next_collect_answer_question():
