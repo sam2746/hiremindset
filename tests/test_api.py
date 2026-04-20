@@ -90,6 +90,11 @@ def test_session_start_returns_collect_answer_phase():
     assert pq["phase"] == "collect_answer"
     assert pq["ai_eval"] is None
     assert pq["asked_round"] == 1
+    # 출처 원문이 함께 내려와야 한다.
+    assert pq["source_excerpts"], "첫 질문부터 source_excerpts가 포함돼야 함"
+    first = pq["source_excerpts"][0]
+    assert first["claim_id"].startswith("c")
+    assert first["paragraph_text"]
 
 
 def test_session_start_rejects_empty_text():

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from hiremindset.graph.sources import build_source_excerpts, flag_evidence
 from hiremindset.graph.state import GraphState, ProbingQuestion
 
 try:  # pragma: no cover - 진입점은 LangGraph 실행 환경
@@ -68,6 +69,8 @@ def collect_answer(state: GraphState) -> GraphState:
         "target_flag_id": last_q.get("target_flag_id"),
         "target_claim_ids": list(last_q.get("target_claim_ids") or []),
         "profile": last_q.get("profile"),
+        "source_excerpts": build_source_excerpts(state, last_q),
+        "flag_evidence": flag_evidence(state, last_q.get("target_flag_id")),
     }
     response = _interrupt(payload)
     return apply_answer_response(state, response)

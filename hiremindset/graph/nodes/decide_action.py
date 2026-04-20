@@ -31,6 +31,7 @@ from __future__ import annotations
 from typing import Any
 
 from hiremindset.graph.queue_ops import max_priority, next_queue_suffix
+from hiremindset.graph.sources import build_source_excerpts, flag_evidence
 from hiremindset.graph.state import (
     AnswerEval,
     ControlSignal,
@@ -150,6 +151,8 @@ def decide_action(state: GraphState) -> GraphState:
         "target_claim_ids": list(last_q.get("target_claim_ids") or []),
         "profile": last_q.get("profile"),
         "ai_eval": ai_eval,
+        "source_excerpts": build_source_excerpts(state, last_q),
+        "flag_evidence": flag_evidence(state, last_q.get("target_flag_id")),
     }
     response = _interrupt(payload)
     return apply_decision_response(state, response)

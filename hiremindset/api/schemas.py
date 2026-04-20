@@ -48,6 +48,15 @@ class AnswerEvalSnapshot(BaseModel):
     suggest: list[str] = Field(default_factory=list)
 
 
+class SourceExcerpt(BaseModel):
+    """질문이 겨냥한 claim과 그 원문 문단 스니펫."""
+
+    claim_id: str
+    claim_text: str
+    paragraph_id: str | None = None
+    paragraph_text: str | None = None
+
+
 class PendingQuestion(BaseModel):
     phase: Phase
     question_id: str
@@ -57,6 +66,9 @@ class PendingQuestion(BaseModel):
     target_flag_id: str | None = None
     target_claim_ids: list[str] = Field(default_factory=list)
     asked_round: int = 0
+
+    source_excerpts: list[SourceExcerpt] = Field(default_factory=list)
+    flag_evidence: str | None = None
 
     # phase=decide_action일 때만 채워짐: UI가 평가 카드 + 답변 원문을 보여주는 데 사용.
     answer_text: str | None = None

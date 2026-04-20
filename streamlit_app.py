@@ -219,6 +219,25 @@ def _render_history() -> None:
                 st.write(turn["text"] or "_(빈 답변)_")
 
 
+def _render_source_excerpts(pq: dict[str, Any]) -> None:
+    excerpts = pq.get("source_excerpts") or []
+    evidence = pq.get("flag_evidence")
+    if not excerpts and not evidence:
+        return
+    with st.expander("이 질문의 출처 원문", expanded=True):
+        for e in excerpts:
+            st.markdown(
+                f"**claim `{e.get('claim_id')}`**  \n> {e.get('claim_text') or ''}"
+            )
+            p_text = e.get("paragraph_text")
+            if p_text:
+                st.caption(f"문단 `{e.get('paragraph_id')}`")
+                st.text(p_text)
+        if evidence:
+            st.markdown("**flag 근거**")
+            st.warning(evidence)
+
+
 def _render_collect_answer(api_base: str) -> None:
     ss = st.session_state
     pq = ss.pending or {}
@@ -229,6 +248,7 @@ def _render_collect_answer(api_base: str) -> None:
         f"profile `{pq.get('profile')}` · "
         f"flag `{pq.get('target_flag_id') or '-'}`"
     )
+    _render_source_excerpts(pq)
 
     turn_idx = len(ss.history)
     answer = st.text_area(
@@ -259,6 +279,7 @@ def _render_decide_action(api_base: str) -> None:
     st.markdown(
         f"**AI 평가** · R{pq.get('asked_round')} · profile `{pq.get('profile')}`"
     )
+    _render_source_excerpts(pq)
     st.caption("질문")
     st.info(pq.get("text") or "")
     st.caption("후보자 답변")

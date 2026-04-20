@@ -29,6 +29,7 @@ from hiremindset.api.schemas import (
     SessionResumeRequest,
     SessionStartRequest,
     SessionStepResponse,
+    SourceExcerpt,
 )
 from hiremindset.graph.builder import build_graph
 
@@ -95,6 +96,18 @@ def _build_pending(payload: dict[str, Any], state_values: dict[str, Any]) -> Pen
             suggest=list(ai_eval_raw.get("suggest") or []),
         )
 
+    excerpts_raw = payload.get("source_excerpts") or []
+    source_excerpts = [
+        SourceExcerpt(
+            claim_id=str(e.get("claim_id") or ""),
+            claim_text=str(e.get("claim_text") or ""),
+            paragraph_id=e.get("paragraph_id"),
+            paragraph_text=e.get("paragraph_text"),
+        )
+        for e in excerpts_raw
+        if isinstance(e, dict)
+    ]
+
     return PendingQuestion(
         phase=phase,  # type: ignore[arg-type]
         question_id=str(payload.get("question_id") or ""),
@@ -104,6 +117,8 @@ def _build_pending(payload: dict[str, Any], state_values: dict[str, Any]) -> Pen
         target_flag_id=payload.get("target_flag_id"),
         target_claim_ids=list(payload.get("target_claim_ids") or []),
         asked_round=int(strategy.get("round", 0)),
+        source_excerpts=source_excerpts,
+        flag_evidence=payload.get("flag_evidence"),
         answer_text=payload.get("answer_text") if phase == "decide_action" else None,
         ai_eval=ai_eval,
     )
