@@ -60,11 +60,16 @@ def emit_question(
         state.get("documents") or {}
     ).get("paragraphs") or []
 
-    if generator is None:
-        from hiremindset.graph.llm import default_question_generator
+    # 주입·fallback으로 이미 질문 문장이 있으면 LLM 호출을 건너뛴다.
+    pre = top.get("pre_generated_text")
+    if pre:
+        text = pre
+    else:
+        if generator is None:
+            from hiremindset.graph.llm import default_question_generator
 
-        generator = default_question_generator()
-    text = generator(top, claims_by_id, flag, paragraphs)
+            generator = default_question_generator()
+        text = generator(top, claims_by_id, flag, paragraphs)
 
     existing_pqs = list(state.get("probing_questions") or [])
     strategy: Strategy = dict(state.get("strategy") or {})  # type: ignore[assignment]
@@ -75,7 +80,11 @@ def emit_question(
         "queue_id": top["id"],
         "text": text,
         "asked_round": current_round,
+        "target_claim_ids": list(top.get("target_claim_ids") or []),
+        "profile": top["profile"],
     }
+    if top.get("target_flag_id"):
+        pq["target_flag_id"] = top["target_flag_id"]
 
     existing_turns = list(state.get("turns") or [])
     turn: Turn = {"q_id": pq["id"], "role": "simulator", "answer_text": ""}

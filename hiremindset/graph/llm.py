@@ -15,13 +15,16 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from hiremindset.graph.state import (
+    AnswerEval,
     Claim,
     ClaimType,
     CrossCheckPair,
     CrossVerdict,
+    EvalSuggestion,
     FlagCategory,
     Paragraph,
     ProbeItem,
+    ProbingQuestion,
     SuspicionFlag,
 )
 
@@ -390,3 +393,160 @@ def default_question_generator(
         return result.text.strip()
 
     return _generate
+
+
+# ==============================================================
+# Answer evaluation & fallback seeding
+# ==============================================================
+
+
+class _AnswerEvalOut(BaseModel):
+    specificity: float = Field(..., ge=0.0, le=1.0)
+    consistency: float = Field(..., ge=0.0, le=1.0)
+    epistemic: float = Field(..., ge=0.0, le=1.0)
+    refusal_or_hedge: bool
+    suggest: list[EvalSuggestion] = Field(default_factory=list)
+
+
+_EVAL_SYSTEM = (
+    "당신은 면접관을 보조하는 답변 평가기입니다.\n"
+    "후보자 답변이 앞선 질문을 얼마나 구체적으로 풀어냈는지 3축으로 채점합니다.\n"
+    "- specificity: 수치·고유명·절차의 구체성 (0.0 ~ 1.0)\n"
+    "- consistency: 앞선 claim/문단과의 정합 (0.0 ~ 1.0)\n"
+    "- epistemic: 모르는 부분을 정직하게 드러냈는가 (0.0 ~ 1.0)\n"
+    "- refusal_or_hedge: 회피성 수사·모호한 얼버무림이 지배적인지 (bool)\n"
+    "- suggest: 다음 조치 제안 (mechanism / drill / done)\n"
+    "주관적 논평은 금지. 제공된 문단·주장 범위 안에서만 판정하세요."
+)
+
+_EVAL_USER = (
+    "# 질문 (profile={profile})\n{question}\n\n"
+    "# 후보자 답변\n{answer}\n\n"
+    "# 대상 claims\n{claims}\n\n"
+    "# 플래그 근거\n{evidence}\n\n"
+    "# 참고 문단\n{paragraphs}\n"
+)
+
+
+def default_answer_evaluator(
+    *,
+    model: str | None = None,
+    temperature: float = 0.0,
+) -> Callable[
+    [ProbingQuestion, str, list[Claim], SuspicionFlag | None, list[Paragraph]],
+    AnswerEval,
+]:
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model_name = model or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
+    llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
+    structured = llm.with_structured_output(_AnswerEvalOut)
+    prompt = ChatPromptTemplate.from_messages(
+        [("system", _EVAL_SYSTEM), ("human", _EVAL_USER)]
+    )
+    chain = prompt | structured
+
+    def _evaluate(
+        last_q: ProbingQuestion,
+        answer_text: str,
+        target_claims: list[Claim],
+        flag: SuspicionFlag | None,
+        paragraphs: list[Paragraph],
+    ) -> AnswerEval:
+        claims_str = (
+            "\n".join(
+                f"- {c['id']} | {c['type']} | {c['text']}" for c in target_claims
+            )
+            or "(없음)"
+        )
+        paragraph_ids = {c["source_paragraph_id"] for c in target_claims}
+        relevant = [p for p in paragraphs if p["id"] in paragraph_ids]
+        paragraphs_str = (
+            "\n".join(f"{p['id']} | {p['text']}" for p in relevant) or "(없음)"
+        )
+        result = chain.invoke(
+            {
+                "profile": last_q.get("profile", "story"),
+                "question": last_q.get("text", ""),
+                "answer": answer_text,
+                "claims": claims_str,
+                "evidence": flag.get("evidence") if flag else "(없음)",
+                "paragraphs": paragraphs_str,
+            }
+        )
+        return {
+            "q_id": "",  # 호출부에서 채움
+            "specificity": float(result.specificity),
+            "consistency": float(result.consistency),
+            "epistemic": float(result.epistemic),
+            "refusal_or_hedge": bool(result.refusal_or_hedge),
+            "suggest": list(result.suggest),
+        }
+
+    return _evaluate
+
+
+# ---------- fallback seeder ----------
+
+
+class _FallbackSeedOut(BaseModel):
+    text: str = Field(..., description="다음에 던질 꼬리 질문 한 문장")
+
+
+_SEED_SYSTEM = (
+    "당신은 숙련된 면접관입니다. 직전 답변에서 부족했던 지점을 더 좁혀 물어보는\n"
+    "다음 꼬리 질문 한 문장을 생성하세요.\n"
+    "- 직전 답변을 그대로 인용하지 말고, 그 답변이 회피한 지점을 찍어 질문하세요.\n"
+    "- profile을 유지한 채 한 단계 더 구체 수준을 높이세요.\n"
+    "- 반드시 한국어로 한 문장만."
+)
+
+_SEED_USER = (
+    "# 원 질문 (profile={profile})\n{question}\n\n"
+    "# 후보자 답변\n{answer}\n\n"
+    "# 대상 claims\n{claims}\n\n"
+    "# 플래그 근거\n{evidence}\n"
+)
+
+
+def default_fallback_seeder(
+    *,
+    model: str | None = None,
+    temperature: float = 0.2,
+) -> Callable[[ProbingQuestion, str, list[Claim], SuspicionFlag | None], str]:
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
+    model_name = model or os.environ.get("GEMINI_MODEL") or "gemini-2.5-flash"
+    llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature)
+    structured = llm.with_structured_output(_FallbackSeedOut)
+    prompt = ChatPromptTemplate.from_messages(
+        [("system", _SEED_SYSTEM), ("human", _SEED_USER)]
+    )
+    chain = prompt | structured
+
+    def _seed(
+        last_q: ProbingQuestion,
+        answer_text: str,
+        target_claims: list[Claim],
+        flag: SuspicionFlag | None,
+    ) -> str:
+        claims_str = (
+            "\n".join(
+                f"- {c['id']} | {c['type']} | {c['text']}" for c in target_claims
+            )
+            or "(없음)"
+        )
+        result = chain.invoke(
+            {
+                "profile": last_q.get("profile", "story"),
+                "question": last_q.get("text", ""),
+                "answer": answer_text,
+                "claims": claims_str,
+                "evidence": flag.get("evidence") if flag else "(없음)",
+            }
+        )
+        return result.text.strip()
+
+    return _seed

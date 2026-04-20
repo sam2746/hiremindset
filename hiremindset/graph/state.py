@@ -101,6 +101,7 @@ class ProbeItem(TypedDict):
     target_flag_id: NotRequired[str]
     priority: NotRequired[int]        # 우선순위 큐 정렬 키 (클수록 먼저)
     source: NotRequired[ProbeSource]  # plan | fallback | hitl
+    pre_generated_text: NotRequired[str]  # 주입/재생성된 질문 문장 (emit_question이 LLM 생략)
 
 
 class ProbingQuestion(TypedDict):
@@ -108,6 +109,9 @@ class ProbingQuestion(TypedDict):
     queue_id: str
     text: str
     asked_round: int
+    target_flag_id: NotRequired[str]
+    target_claim_ids: NotRequired[list[str]]
+    profile: NotRequired[ProbeProfile]
 
 
 # ---------- turns & evaluation ----------
